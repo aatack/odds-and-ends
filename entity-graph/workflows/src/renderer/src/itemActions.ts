@@ -2,7 +2,7 @@
 // view header (as icon buttons, the rest in the menu beside them) and the
 // right-click menu draw.
 
-import { CircleCheck, CircleX, RotateCcw, SkipForward, type LucideIcon } from 'lucide-react'
+import { CircleCheck, CircleX, RotateCcw, type LucideIcon } from 'lucide-react'
 import type { CustomAction } from '../../shared/types'
 import { actionIcon } from './actionIcons'
 import { api } from './useWorkflows'
@@ -23,13 +23,13 @@ export interface ItemAction {
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
 /**
- * The actions on an item: an open topic can be closed or skipped, a closed one reopened, and one with no status has
- * none; any other open item cancelled (not a bot or a script: they are drawn as messages). Then the person's own
+ * The actions on an item: an open topic can be closed (in the menu, not a button: Next, in every header, moves on), a
+ * closed one reopened, and one with no status has none; any other open item cancelled (not a bot or a script: they are drawn as messages). Then the person's own
  * actions for its type (`custom`), from the Types page.
  */
 export function itemActions(
   e: { id: string; type: string; resolved: boolean; summary: string; params?: Record<string, unknown> },
-  ctx: { act: Act; skip: (id: string) => void; custom?: CustomAction[] },
+  ctx: { act: Act; custom?: CustomAction[] },
 ): ItemAction[] {
   const status = e.type === 'topic' ? e.params?.open : undefined
   const own: ItemAction[] = e.type === 'topic' && typeof status !== 'boolean'
@@ -39,10 +39,7 @@ export function itemActions(
       ? [{ id: 'reopen', label: 'Reopen', important: true, icon: RotateCcw, tone: '', run: () => void ctx.act(() => api().reopen(e.id)) }]
       : []
     : e.type === 'topic'
-      ? [
-          { id: 'resolve', label: 'Resolve', important: true, icon: CircleCheck, tone: 'text-success-600 hover:text-success-600', run: () => void ctx.act(() => api().close(e.id)) },
-          { id: 'skip', label: 'Skip', important: true, icon: SkipForward, tone: 'text-warning-700 hover:text-warning-700', run: () => ctx.skip(e.id) },
-        ]
+      ? [{ id: 'close', label: 'Close', important: false, icon: CircleCheck, tone: 'text-success-600 hover:text-success-600', run: () => void ctx.act(() => api().close(e.id)) }]
       : e.type === 'user' || e.type === 'bot' || e.type === 'script'
         ? []
         : [

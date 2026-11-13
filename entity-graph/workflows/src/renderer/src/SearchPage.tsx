@@ -2,7 +2,7 @@ import { ArrowDown, ArrowUp, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { BUILTIN_SECTIONS, DEFAULT_SECTIONS, type SearchSection } from '../../shared/search'
 import { fenced, Markdown } from './components/ui/Markdown'
-import { SECTIONS } from './sections'
+import { sectionLabel } from './sections'
 import { api } from './useWorkflows'
 
 const QUERY_EXAMPLE = { and: [{ eq: { key: 'type', value: 'topic' } }, { eq: { key: 'open', value: true } }, { contains_ignore_case: { key: 'text', value: 'review' } }] }
@@ -100,7 +100,7 @@ export function SearchPage() {
               <select value={d.id} onChange={(e) => set(i, { id: e.target.value as (typeof BUILTIN_SECTIONS)[number] })}>
                 {BUILTIN_SECTIONS.map((id) => (
                   <option key={id} value={id}>
-                    {SECTIONS[id].label}
+                    {sectionLabel(id, { me: '', viewed: [], users: [], bots: [] })}
                   </option>
                 ))}
               </select>

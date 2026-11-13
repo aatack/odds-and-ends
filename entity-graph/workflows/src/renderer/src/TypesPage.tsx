@@ -43,7 +43,6 @@ export function TypesPage({ catalog, custom, act, mobile = false }: { catalog: C
   const [generating, setGenerating] = useState(false)
   /** The type whose fields are open, if any. */
   const [fields, setFields] = useState<string | null>(null)
-  const noop = () => {}
 
   // Every change is saved as it is made, a moment after the typing stops. Saves
   // go one at a time, so a new action is inserted once and then updated by the id
@@ -103,7 +102,7 @@ export function TypesPage({ catalog, custom, act, mobile = false }: { catalog: C
   return (
     <div className={`page types-page ${mobile ? 'mobile' : ''}`}>
       {catalog.types.map((t) => {
-        const builtIn = itemActions({ id: '', type: t.type, resolved: false, summary: '' }, { act: async () => {}, skip: noop })
+        const builtIn = itemActions({ id: '', type: t.type, resolved: false, summary: '' }, { act: async () => {} })
         const mine = custom.filter((c) => c.type === t.type)
         const editing = draft?.type === t.type
         return (

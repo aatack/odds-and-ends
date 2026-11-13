@@ -88,6 +88,9 @@ export const findFocusAtom = atom(0)
 /** The tasks the person here has had on screen lately, the most recent first: the finder's "Recently viewed". Kept here, not in the store. */
 export const viewedAtom = atomWithStorage<string[]>('workflows.viewed', [], createJSONStorage(() => localStorage), { getOnInit: true })
 
-/** When each task was last opened here, this session only (not kept): Next puts those seen in the last `VIEWED_LATELY_MS` last. */
+/** Whose search page the Tasks view shows (people and bots, any of them); none, the person signed in's. */
+export const searchWhoAtom = atomWithStorage<string[]>('workflows.searchWho', [], createJSONStorage(() => localStorage), { getOnInit: true })
+
+/** When each task was last opened here, this session only (not kept): Next passes over those seen in the last `VIEWED_LATELY_MS`. */
 export const viewedAtAtom = atom<Record<string, number>>({})
 export const VIEWED_LATELY_MS = 30 * 60 * 1000

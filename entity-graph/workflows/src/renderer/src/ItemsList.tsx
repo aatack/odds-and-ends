@@ -8,7 +8,7 @@ import type { Item } from '../../shared/types'
 import { minutes } from './Chat'
 import { useItemMenu } from './ItemMenu'
 import { ItemIcon, TYPE_ICON, waitingOn } from './icons'
-import { SearchSectionsContext, SECTIONS, type Recent } from './sections'
+import { SearchSectionsContext, sectionLabel, SECTIONS, type Recent } from './sections'
 import { api } from './useWorkflows'
 import { Marked } from './components/ui/Marked'
 import { sameView, searchFocusAtom, viewsAtom } from './views'
@@ -147,7 +147,7 @@ export function ItemsList(props: {
         const shown = expanded.includes(id) ? all : all.slice(0, perSection)
         const lines: Line[] = shown.map((item) => ({ key: `${id}:${item.id}`, item }))
         if (shown.length < all.length) lines.push({ key: `${id}:more`, more: id, n: all.length - shown.length })
-        return { id, label: s.label ?? SECTIONS[s.id].label, count: all.length, lines }
+        return { id, label: s.label ?? sectionLabel(s.id, recent), count: all.length, lines }
       })
       .filter((g) => g.count)
     return botsLabel ? [...chosenGroup, ...itemGroups, ...botGroup] : [...chosenGroup, ...botGroup, ...itemGroups]

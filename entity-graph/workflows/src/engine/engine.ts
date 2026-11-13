@@ -374,8 +374,8 @@ export class Engine extends EventEmitter {
   overview(viewer = this.me()): Overview {
     const since = this.now() - 24 * 60 * MINUTE
     const held = new Set(this.store.allAssignments().map((a) => a.item))
-    // What the viewer owns is listed too (their bots and scripts among it).
-    for (const id of this.ownedBy(viewer)) held.add(id)
+    // What anyone owns is listed too (bots and scripts among it): a search page can be anyone's.
+    for (const r of [...this.store.ofType('bot'), ...this.store.ofType('script')]) if (this.owner(r.id)) held.add(r.id)
     const items = [...this.store.items.values()]
       .filter((r) =>
         r.type === 'topic'

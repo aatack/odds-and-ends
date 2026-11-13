@@ -34,7 +34,6 @@ function asText(info: ItemInfo): string {
  */
 export function ItemMenu({
   actOn,
-  skip,
   custom,
   tasks,
   recent,
@@ -44,7 +43,6 @@ export function ItemMenu({
   tasks: Item[]
   recent: Recent
   actOn: (id: string) => (fn: () => Promise<unknown>) => Promise<void>
-  skip: (id: string) => void
 }) {
   const [menu, setMenu] = useAtom(menuAtom)
   const [views, setViews] = useAtom(viewsAtom)
@@ -169,7 +167,7 @@ export function ItemMenu({
         </button>
       )}
       {info?.id === menu.id &&
-        itemActions(info, { act: actOn(info.id), skip, custom }).map((a) => (
+        itemActions(info, { act: actOn(info.id), custom }).map((a) => (
           <button
             key={a.id}
             className="menu-action"

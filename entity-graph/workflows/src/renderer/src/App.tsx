@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Catalog, Item, ItemDetail, ItemInfo, Overview } from '../../shared/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { ChevronLeft, Menu, MoreHorizontal } from 'lucide-react'
+import { ChevronLeft, Menu, MoreHorizontal, SkipForward } from 'lucide-react'
 import { itemActions, type ItemAction } from './itemActions'
 import { Dropdown, DropdownItem } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
@@ -31,9 +31,9 @@ import { defaultActions } from './defaultActions'
 import { minutes, useNow } from './time'
 import { LogPage } from './LogPage'
 import { api, useWorkflows } from './useWorkflows'
-import { findAtom, findFocusAtom, forwardAtom, menuAtom, renameAtom, searchFocusAtom, viewedAtom, viewsAtom, type View } from './views'
+import { findAtom, findFocusAtom, forwardAtom, menuAtom, renameAtom, searchFocusAtom, searchWhoAtom, viewedAtom, viewsAtom, type View } from './views'
 import { FindLine } from './FindLine'
-import { AssigneePill } from './Assignees'
+import { AssigneePill, PickPill } from './Assignees'
 import { BotsPage, botStatus } from './BotsPage'
 import { BotView } from './BotView'
 import { Bot, User as UserIcon } from 'lucide-react'
@@ -169,7 +169,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
           </main>
           <AppMenu mobile={mobile} onSignOut={onSignOut} onCloseSource={onCloseSource} />
         </div>
-        <ItemMenu actOn={items.actOn} skip={items.skip} custom={items.customActions} tasks={items.overview.items} recent={items.recent} />
+        <ItemMenu actOn={items.actOn} custom={items.customActions} tasks={items.overview.items} recent={items.recent} />
       </ItemRefContext.Provider>
       </SearchSectionsContext.Provider>
     </ItemsContext.Provider>
@@ -283,6 +283,7 @@ function AppMenu({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSign
  */
 function ItemsMain({ mobile }: { mobile: boolean }) {
   const w = useItems()
+  const [who, setWho] = useAtom(searchWhoAtom)
   const openItem = (id: string) => w.open({ kind: 'event', id })
   // What the items view opens takes its place, so Back goes to where you were before it.
   const openFromItems = (id: string) => w.open({ kind: 'event', id }, { replace: w.view?.kind === 'items' })
@@ -338,13 +339,27 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
   if (!w.view || w.view.kind === 'items')
     return (
       <div className="view">
-        <ViewHeader canGoBack={w.views.length > 0} onBack={w.back} title="Tasks" />
+        <ViewHeader
+          canGoBack={w.views.length > 0}
+          onBack={w.back}
+          title="Tasks"
+          actions={
+            <PickPill
+              title="Whose search page"
+              none="You"
+              value={who.length ? who : [w.overview.me.id]}
+              setValue={(ids) => setWho(ids.length === 1 && ids[0] === w.overview.me.id ? [] : ids)}
+              overview={w.overview}
+              people
+            />
+          }
+        />
         {w.error && <div className="error">{w.error}</div>}
         {w.empty && <p className="muted view-note">Nothing needs you.</p>}
         <div className="view-body">
           <ItemsList
             items={w.overview.items}
-            recent={w.recent}
+            recent={{ ...w.recent, who }}
             sections={SEARCH_SECTIONS}
             onEscape={w.views.length > 0 ? w.back : undefined}
             onOpen={openFromItems}
@@ -378,8 +393,13 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
   const actions = debug ? null : (
     <>
       {e.type === 'topic' && <DisplayPicker info={e} act={w.act} />}
-      {d.item && !d.item.item.closed && e.type !== 'bot' && <AssigneePill item={d.item.item} overview={w.overview} act={w.actOn(e.id)} />}
-      <HeaderActions actions={itemActions(e, { act: w.actOn(e.id), skip: w.skip, custom: w.customActions })} mobile={mobile} />
+      {d.item && <AssigneePill item={d.item.item} overview={w.overview} act={w.actOn(e.id)} />}
+      <HeaderActions actions={itemActions(e, { act: w.actOn(e.id), custom: w.customActions })} mobile={mobile} />
+      {!mobile && (
+        <IconButton title="Next (Ctrl+D): the next thing assigned to you that you haven't looked at in the last half hour" onClick={() => void w.next()}>
+          <SkipForward className="size-[17px]" />
+        </IconButton>
+      )}
     </>
   )
   return (
@@ -503,7 +523,8 @@ function ViewHeader(props: {
       >
         <ChevronLeft className="icon" />
       </button>
-      {props.info && (props.info.type !== 'topic' || typeof props.info.params.open !== 'boolean') && <ItemInfoIcon info={props.info} />}
+      {/* The item as its pill, in every view's header: its icon (a topic's status), then its title. */}
+      {props.info && <ItemInfoIcon info={props.info} />}
       {editing !== null ? (
         <input
           className="view-title view-title-input"

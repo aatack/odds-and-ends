@@ -29,7 +29,6 @@ export function useWorkflows() {
   const view = views[views.length - 1] ?? null
   const selected = view && 'id' in view ? view.id : null
   const [detail, setDetail] = useState<ItemInfoDetail | null>(null)
-  const [skipped, setSkipped] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [empty, setEmpty] = useState(false)
   const [catalog, setCatalog] = useState<Catalog | null>(null)
@@ -128,25 +127,15 @@ export function useWorkflows() {
     return Object.keys(viewedAt).filter((id) => viewedAt[id] > since)
   }, [viewedAt])
 
-  const next = useCallback(
-    async (skip: string[] = skipped) => {
-      // Next moves on from what is on screen; it comes back to it only when nothing else needs the human.
-      const later = viewedLately()
-      const id = (selected && (await api().next([...skip, selected], later))) || (await api().next(skip, later))
-      select(id)
-      setEmpty(id === null)
-    },
-    [skipped, selected, select, viewedLately],
-  )
-
-  const skip = useCallback(
-    (id: string) => {
-      const all = [...skipped, id]
-      setSkipped(all)
-      void next(all)
-    },
-    [skipped, next],
-  )
+  /**
+   * Next: the next item assigned to the human that they have not looked at in the last half hour (as a bot passes over
+   * what it ran on lately), never the one on screen. None, and the list says nothing needs them.
+   */
+  const next = useCallback(async () => {
+    const id = await api().next([...viewedLately(), ...(selected ? [selected] : [])])
+    select(id)
+    setEmpty(id === null)
+  }, [selected, select, viewedLately])
 
   /**
    * After the human has done something to the task on screen: if it closed, goes on to the next that needs them.
@@ -157,14 +146,14 @@ export function useWorkflows() {
       if (selected !== id) return
       const item = (await api().itemInfoDetail(id))?.item?.item
       if (item && !item.closed) return
-      const to = await api().next([...skipped, id], viewedLately())
+      const to = await api().next([...viewedLately(), id])
       if (to) open({ kind: 'event', id: to }, { direct: false })
       else {
         open({ kind: 'items' })
         setEmpty(true)
       }
     },
-    [selected, skipped, open, viewedLately],
+    [selected, open, viewedLately],
   )
 
   /** `act`, for something done to one item: then, if it no longer needs the human, on to the next (`moveOn`). */
@@ -187,5 +176,5 @@ export function useWorkflows() {
     [setViewed, setViewedAt],
   )
 
-  return { recent, markViewed, overview, view, views, detail, catalog, customActions, selected, select, open, back, forward, next, skip, act, actOn, error, empty }
+  return { recent, markViewed, overview, view, views, detail, catalog, customActions, selected, select, open, back, forward, next, act, actOn, error, empty }
 }
