@@ -355,6 +355,18 @@ export const itemActions: Action[] = [
     },
   },
   {
+    name: 'move_item',
+    unsafe: false,
+    description:
+      "Move items into another item: into its comments (its chat; the default) or its notes, after what is there; or out of any (to: null). " +
+      'Who made each, and when, stay. For a message that went in the wrong topic.',
+    input: { item_ids: z.array(z.string()), to: z.string().nullable(), into: z.enum(['comments', 'notes']).optional() },
+    run: async (a, ctx) => {
+      for (const id of a.item_ids as string[]) await ctx.engine.moveItem(id, a.to as string | null, ctx.actor, (a.into as 'comments' | 'notes' | undefined) ?? 'comments')
+      return 'Moved.'
+    },
+  },
+  {
     name: 'search_sections',
     unsafe: false,
     description: "The search page's sections, as configured, and how they work (one list for the whole app). See set_search_sections.",
