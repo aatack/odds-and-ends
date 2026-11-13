@@ -141,7 +141,8 @@ export function promptFor(items: PromptItem[], who?: Who): string {
     .map(({ item, children, first, own, pins = [] }) => {
       const lines = [
         ...pins.map((p) => `[pinned here: ${p.text}]`),
-        ...children.map((e) => cardText(e, who)),
+        // A comment as it was said; anything else (a topic with a status, an approval, a file) with its id, to refer to.
+        ...children.map((e) => cardText(e, { who, ids: !(e.type === 'topic' && typeof e.params.open !== 'boolean') })),
       ]
       const head = own ? ['[your own chat: reply with an update for this id]'] : first ? [`[new to you: ${item.title}]`] : [`[topic: ${item.title}]`]
       const all = [...head, ...(lines.length ? lines : ['[nothing new]'])]

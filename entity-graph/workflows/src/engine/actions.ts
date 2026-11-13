@@ -258,14 +258,16 @@ export const itemActions: Action[] = [
       'or a script) its comments (`children`: every item in its chat, with its data). For a topic that shows its notes, or anything ' +
       'else, `focus`: the whole of it as text, as its view shows it (a topic\'s notes as an indented tree with ids), cut off at 100 ' +
       'lines with the ids to ask for the rest. And what is pinned to it (`pins`) and where it is pinned (`pinnedIn`), each with its id. ' +
-      'With `size`, only the item as text at that size: `pill` (its type, name and id, as `[id]()` shows it), `card` (as a chat ' +
-      'shows it) or `focus` (the whole of it: a chat as the cards of what is in it, the latest 100).',
-    input: { item_id: itemId, size: z.enum(['pill', 'card', 'focus']).optional() },
+      'With `size`, only the item as text at that size: `pill` (its type, short title and id, as `[id]()` shows it), `card` (all the text ' +
+      'it holds, as a chat shows it) or `focus` (its default view: a chat as its messages, the latest 100; notes as nested bullets, the ' +
+      'first 100 rows; anything else its values), with ids in a column on the left. With `size: focus`, `limit` says how many, and ' +
+      '`offset` skips that many (from the latest messages, or the first rows); what is left out is said, with the offset to ask for it.',
+    input: { item_id: itemId, size: z.enum(['pill', 'card', 'focus']).optional(), offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).optional() },
     run: async (a, { engine }) => {
       const id = String(a.item_id)
       const info = engine.info(id)
       if (!info) throw new Error(`No item ${id}.`)
-      if (a.size) return { text: engine.view(id, a.size as 'pill' | 'card' | 'focus') }
+      if (a.size) return { text: engine.view(id, a.size as 'pill' | 'card' | 'focus', { offset: a.offset as number | undefined, limit: a.limit as number | undefined }) }
       const d = engine.detail(id)
       const brief = (ids: string[]) => ids.map((i) => engine.info(i)).filter((i) => !!i).map((i) => ({ id: i!.id, type: i!.type, summary: i!.summary }))
       const pinned = { pins: brief(info.pins), pinnedIn: brief(info.pinnedIn) }

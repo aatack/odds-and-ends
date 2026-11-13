@@ -1404,9 +1404,9 @@ export class Engine extends EventEmitter {
     return out
   }
 
-  /** An item at a size, as text for a bot (views.ts); null if there is no such item. */
-  view(id: string, size: Size): string | null {
-    return viewText(this, id, size, this.who())
+  /** An item at a size, as text (views.ts): for a bot unless told, with ids; null if there is no such item. */
+  view(id: string, size: Size, opts: { ids?: boolean; offset?: number; limit?: number } = {}): string | null {
+    return viewText(this, id, size, { ids: true, who: this.who(), ...opts })
   }
 
   /** Who did something, as a bot is told: a name, and whether a person said it. */

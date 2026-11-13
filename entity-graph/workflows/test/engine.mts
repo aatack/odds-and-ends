@@ -17,7 +17,7 @@ import { botOutputSchema } from '../src/engine/schema.ts'
 import { runScript } from '../src/engine/script.ts'
 import { trustFolders, trustTargets } from '../src/engine/trust.ts'
 import { ASK, BotRunner, limitedUntil, MAX_BOTS, promptFor, type SpawnBot } from '../src/engine/workers.ts'
-import { focusText } from '../src/engine/views.ts'
+import { cardText, focusText, pillText } from '../src/engine/views.ts'
 
 const MINUTE = 60_000
 let clock = 1_000_000
@@ -428,18 +428,29 @@ await engine.close(loose)
   const [inner] = await engine.addItems(b, [{ type: 'task', params: { title: 'Do it' } }], 'alex', 'human', 'notes')
   await engine.addItems(inner, [{ type: 'note', params: { text: 'in the task' } }], 'alex')
   assert.deepEqual(engine.subtree(root).map((i) => i.id), [root, b, a1, inner])
-  // A bot reads it at its focus (get_item): its tree under its pill, a note at focus, anything else as its pill.
+  // A bot reads it at its focus (get_item): its tree under its pill as nested bullets, with ids in a column on the left.
   const ctx = { engine, author: 'bot' as const, actor: 'bot', itemId: null, runId: null }
   const got = (await engine.callAction('get_item', { item_id: root }, ctx)) as { focus: string; pinnedIn: { id: string }[] }
-  assert.equal(got.focus, `[topic] Plan (${root})\n- # B (${b})\n  - [x] A1 (${a1})\n  - [ ] Do it (${inner})`)
+  const w = Math.max(b.length, a1.length, inner.length)
+  assert.equal(got.focus, `[topic] Plan (${root})\n${b.padEnd(w)}  - # B\n${a1.padEnd(w)}    - [x] A1\n${inner.padEnd(w)}    - [ ] Do it`)
   assert.deepEqual(got.pinnedIn.map((p) => p.id), [t])
   await engine.addItems(a1, Array.from({ length: 5 }, (_, i) => ({ type: 'note' as const, params: { text: `n${i}` } })), 'alex', 'human', 'notes')
-  // Cut off at the limit, with the ids to ask for the rest.
-  assert.match(focusText(engine, root, undefined, 4)!, new RegExp(`\\.\\.\\. 3 more under ${a1}: get_item it[^]*\\.\\.\\. 1 more under ${b}`))
+  // Notes: the first `limit` rows, then what is left out, with the offset to ask for it; and from an offset on.
+  assert.match(focusText(engine, root, { limit: 4 })!, /\.\.\. 4 more rows below \(offset 4 for them\)$/)
+  const from = focusText(engine, root, { offset: 6, limit: 4 })!
+  assert.match(from, /\.\.\. 6 rows above, left out/)
+  assert.match(from, /- \[ \] Do it$/)
+  // A pill is its short title, cut with an ellipsis; a card all the text it holds.
+  assert.equal(pillText({ ...engine.info(inner)!, summary: 'x'.repeat(80) }), `${'x'.repeat(59)}…`)
+  assert.equal(cardText({ ...engine.info(inner)!, params: { text: 'One.\n\nTwo.', open: true } }), '[ ] One.\n\nTwo.')
   assert.equal(engine.view(inner + 'x', 'focus'), null)
   // The smaller sizes, and a task at its focus: the cards of what is in it.
   assert.deepEqual(await engine.callAction('get_item', { item_id: inner, size: 'pill' }, ctx), { text: `[topic] Do it (${inner})` })
-  assert.equal(engine.view(inner, 'focus'), `[topic] Do it (${inner})\n[alex: in the task]`)
+  const said = engine.children(inner)[0].id
+  assert.equal(engine.view(inner, 'focus'), `[topic] Do it (${inner})\n${said}  [alex: in the task]`)
+  // A chat: the latest `limit` messages, the earlier ones said, to ask for with an offset.
+  await engine.addItems(inner, [{ type: 'note', params: { text: 'later' } }], 'alex')
+  assert.match(engine.view(inner, 'focus', { ids: false, limit: 1 })!, /\.\.\. 1 earlier messages, left out \(offset 1 for them\)\n\[alex: later\]$/)
   await engine.close(inner)
   await engine.close(t)
 }
