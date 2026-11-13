@@ -13,7 +13,8 @@ export type ItemKind = 'topic' | 'approval' | 'script' | 'link' | 'search' | 'sl
 
 /** An item as it is added. `ref` names it, so another added alongside can point at it. */
 export interface ItemSpec {
-  type: ItemKind
+  /** Its type; an older build's `task` and `note` are taken as topics. */
+  type: ItemKind | 'task' | 'note'
   params: Record<string, unknown>
   ref?: string
   /** Pin it to the item it is added in, too. */
