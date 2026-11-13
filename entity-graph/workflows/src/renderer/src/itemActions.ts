@@ -1,6 +1,7 @@
 // What can be done to an item, by its type and state: the one list both the
-// view header (as icon buttons, the rest in the menu beside them) and the
-// right-click menu draw.
+// right pane (as buttons; on a phone, the header's menu) and the right-click
+// menu's last section draw. Each type's own are part of the type, as its pill,
+// card and focus are: `TYPE_ACTIONS`.
 
 import { CircleCheck, RotateCcw, type LucideIcon } from 'lucide-react'
 import type { CustomAction } from '../../shared/types'
@@ -22,20 +23,23 @@ export interface ItemAction {
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
 
+type Target = { id: string; type: string; closed: boolean; summary: string; params?: Record<string, unknown> }
+
+/** Each type's own actions, after those every item has (Close, Reopen): none yet. A file's Copy file would go here. */
+export const TYPE_ACTIONS: Partial<Record<string, (e: Target, ctx: { act: Act }) => ItemAction[]>> = {}
+
 /**
  * The actions on an item: anything open can be closed (it floats free: its owner and assignees come off it, and come
- * back when it is reopened), anything closed reopened. Then the person's own actions for its type (`custom`), from the
- * Types page.
+ * back when it is reopened), anything closed reopened. Then its type's own (`TYPE_ACTIONS`), then the person's own
+ * actions for its type (`custom`), from the Types page.
  */
-export function itemActions(
-  e: { id: string; type: string; closed: boolean; summary: string; params?: Record<string, unknown> },
-  ctx: { act: Act; custom?: CustomAction[] },
-): ItemAction[] {
+export function itemActions(e: Target, ctx: { act: Act; custom?: CustomAction[] }): ItemAction[] {
   const own: ItemAction[] = e.closed
     ? [{ id: 'reopen', label: 'Reopen', important: true, icon: RotateCcw, tone: '', run: () => void ctx.act(() => api().reopen(e.id)) }]
     : [{ id: 'close', label: 'Close', important: true, icon: CircleCheck, tone: 'text-success-600 hover:text-success-600', run: () => void ctx.act(() => api().close(e.id)) }]
   return [
     ...own,
+    ...(TYPE_ACTIONS[e.type]?.(e, ctx) ?? []),
     ...(ctx.custom ?? [])
       .filter((c) => c.type === e.type)
       .map((c) => ({

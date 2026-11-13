@@ -167,7 +167,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
           <ItemsMain mobile={mobile} />
           {mobile && <AppMenu mobile={mobile} onSignOut={onSignOut} onCloseSource={onCloseSource} />}
         </div>
-        <ItemMenu actOn={items.actOn} custom={items.customActions} tasks={items.overview.items} recent={items.recent} />
+        <ItemMenu actOn={items.actOn} custom={items.customActions} overview={items.overview} recent={items.recent} />
       </ItemRefContext.Provider>
       </SearchSectionsContext.Provider>
     </ItemsContext.Provider>

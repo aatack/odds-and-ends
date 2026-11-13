@@ -14,7 +14,7 @@
 // export, `(engine) => Promise<Record<string, string>>`, adds what you need and answers extra views by name (an
 // item's id each); without it, a small fixture is made (a task with a chat, a bot, a child task, an image file).
 // `--press` presses keys in each view before it is shot, comma-separated as Playwright names them (`s,s,Enter`,
-// `Shift+A`, `Control+f`); `type:<text>` types text, `click:<selector>` clicks, `hover:<selector>` hovers (a tooltip shows after
+// `Shift+A`, `Control+f`); `type:<text>` types text, `click:<selector>` clicks, `rclick:<selector>` right-clicks, `hover:<selector>` hovers (a tooltip shows after
 // half a second: add `wait:600`), and `wait:<ms>` waits.
 
 import { execSync } from 'node:child_process'
@@ -108,6 +108,7 @@ try {
         else if (key.startsWith('wait:')) await page.waitForTimeout(Number(key.slice(5)))
         else if (key.startsWith('click:')) await page.click(key.slice(6))
         else if (key.startsWith('hover:')) await page.hover(key.slice(6))
+        else if (key.startsWith('rclick:')) await page.click(key.slice(7), { button: 'right' })
         else await page.keyboard.press(key)
         await page.waitForTimeout(60)
       }

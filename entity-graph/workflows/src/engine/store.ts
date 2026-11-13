@@ -50,8 +50,6 @@ export interface ItemRow {
   data: Record<string, unknown> | null
   /** What a script handed on to its next run. */
   memo: unknown
-  /** Who reacted to it (a thumbs-up): people's usernames, or bots' actors. */
-  reactions: string[]
   // In memory only.
   next_check_at: number | null
   last_error: string | null
@@ -307,14 +305,6 @@ export class Store {
     this.out([set(id, 'state', state ?? null)], 'system', at)
   }
 
-  /** Who reacted to an item, as `by` changed it at `at`. */
-  setReactions(id: string, reactions: string[], by: string, at: number): void {
-    const row = this.items.get(id)
-    if (!row) throw new Error(`No item ${id}.`)
-    row.reactions = reactions
-    this.out([set(id, 'reactions', reactions)], by, at)
-  }
-
   private indexPin(from: string, pin: Pin): void {
     this.pinsOf.set(from, [...this.pins(from), pin])
     this.pinnedTo.set(pin.id, [...(this.pinnedTo.get(pin.id) ?? []), from])
@@ -564,7 +554,6 @@ export function itemFromValues(
     cancelled: !topic && x.cancelled === true,
     data: topic ? null : obj(x.data),
     memo: x.state ?? null,
-    reactions: Array.isArray(x.reactions) ? x.reactions.filter((r): r is string => typeof r === 'string') : [],
     // Waits are checked at once after a restart.
     next_check_at: null,
     last_error: null,

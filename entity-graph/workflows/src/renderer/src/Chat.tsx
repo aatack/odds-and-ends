@@ -1,4 +1,3 @@
-import { ThumbsUp } from 'lucide-react'
 import { memo, useCallback, useRef } from 'react'
 import type { Catalog, ItemDetail, ItemInfo, Overview } from '../../shared/types'
 import { isPerson, nameOf } from './people'
@@ -79,9 +78,6 @@ type MessageProps = { here: string; info: ItemInfo; mine: boolean; me: string; w
 const Message = memo(function Message(props: MessageProps) {
   const { info: e, mine, me, who, act } = props
   const menu = useItemMenu()
-  // Thumbs-ups: a count under the bubble (pressing it toggles yours), or, with none yet, a button shown on hover.
-  const reacted = e.reactions.includes(me)
-  const react = () => void act(() => api().react(e.id, !reacted))
   return (
     <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
       {!mine && <ItemAvatar info={e} owner={props.ownerId ? { name: props.ownerName ?? props.ownerId, onOpen: () => props.onOpen(props.ownerId!) } : null} />}
@@ -91,15 +87,6 @@ const Message = memo(function Message(props: MessageProps) {
           <ItemCard {...props} />
           <span className="bubble-time">{shortTime(e.createdAt)}</span>
         </div>
-        <button
-          data-ui
-          className={`reaction ${e.reactions.length ? 'some' : ''} ${reacted ? 'on' : ''}`}
-          title={e.reactions.length ? `${e.reactions.length} thumbs up` : 'Thumbs up'}
-          onClick={react}
-        >
-          <ThumbsUp className="icon" />
-          {e.reactions.length > 0 && e.reactions.length}
-        </button>
       </div>
     </div>
   )

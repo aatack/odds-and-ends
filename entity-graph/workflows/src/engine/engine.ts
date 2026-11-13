@@ -243,7 +243,6 @@ export class Engine extends EventEmitter {
       nextCheckAt: r.next_check_at,
       runs: r.runs,
       lastError: r.last_error,
-      reactions: r.reactions,
       pins: this.store.pins(r.id).map((p) => p.id),
       pinnedIn: this.store.pinnedIn(r.id),
     }
@@ -559,15 +558,6 @@ export class Engine extends EventEmitter {
     const next = { ...row.params, [key]: value ?? undefined }
     if (JSON.stringify(row.params[key] ?? null) === JSON.stringify(value ?? null)) return
     this.store.setParams(id, Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined)), actor, this.now())
-    this.emit('change')
-  }
-
-  /** Turns `actor`'s reaction (a thumbs-up) to an item on or off. */
-  async react(itemId: string, on: boolean, actor = this.me()): Promise<void> {
-    const row = this.row(itemId)
-    if (!row) throw new Error(`No item ${itemId}.`)
-    if (row.reactions.includes(actor) === on) return
-    this.store.setReactions(itemId, on ? [...row.reactions, actor] : row.reactions.filter((r) => r !== actor), actor, this.now())
     this.emit('change')
   }
 
@@ -1188,7 +1178,7 @@ export class Engine extends EventEmitter {
     const at = this.now()
     this.store.insertItem({
       id, parent_id: null, via: null, seq: this.store.nextSeq(null), type: spec.type, params: this.prepare([spec], 'human')[0].params, created_by: createdBy, created_at: at,
-      resolved: true, resolved_at: at, resolved_by: createdBy, cancelled: false, data: null, memo: null, reactions: [], next_check_at: null,
+      resolved: true, resolved_at: at, resolved_by: createdBy, cancelled: false, data: null, memo: null, next_check_at: null,
       last_error: null, runs: 0, added_n: 0, resolved_n: 0,
     })
   }
@@ -1218,7 +1208,7 @@ export class Engine extends EventEmitter {
         id, parent_id: parentId, via: parentId ? via : null, seq: seq + i, type: spec.type, params, created_by: createdBy, created_at: at,
         resolved: topic ? closed : !type.blocking, resolved_at: topic ? (closed ? at : null) : type.blocking ? null : at,
         resolved_by: topic ? (closed ? createdBy : null) : type.blocking ? null : createdBy, cancelled: false,
-        data: null, memo: null, reactions: [], next_check_at: null, last_error: null,
+        data: null, memo: null, next_check_at: null, last_error: null,
         runs: 0, added_n: 0, resolved_n: 0,
       })
       if (OWNED.includes(spec.type)) {

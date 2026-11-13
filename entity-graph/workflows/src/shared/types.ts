@@ -67,8 +67,6 @@ export interface ItemInfo {
   lastError: string | null
   /** How many times it has been checked (a script, run) since the app started. */
   runs: number
-  /** Who reacted to it (a thumbs-up): people's usernames, or bots' actors (`bot:<id>`). */
-  reactions: string[]
   /** What is pinned to it (`pins` links from it): items useful in actioning it, the first pinned first. */
   pins: string[]
   /** The items it is pinned to (`pins` links to it): where it is referenced. */
@@ -409,10 +407,10 @@ export interface WorkflowsAPI {
   newNotes: (title: string, pinTo: string | null) => Promise<string>
   /** A topic and its notes, depth first (only topics' notes are walked into): the notes view's tree. */
   subtree: (itemId: string) => Promise<ItemInfo[]>
+  /** An item as text at a size, as bots read it (`engine/views.ts`): Copy in its menu. Null if there is no such item. */
+  viewText: (itemId: string, size: 'pill' | 'card' | 'focus') => Promise<string | null>
   /** Gives an item to an owner (a username or a bot), or to nobody (null). */
   setOwner: (itemId: string, owner: string | null) => Promise<void>
-  /** Turns the person's thumbs-up on an item on or off. */
-  react: (itemId: string, on: boolean) => Promise<void>
   customActions: () => Promise<CustomAction[]>
   saveCustomAction: (a: Omit<CustomAction, 'id'> & { id?: string }) => Promise<CustomAction>
   removeCustomAction: (id: string) => Promise<void>
@@ -541,7 +539,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'searchSections', 'setSearchSections', 'runSearchSection', 'setOwner', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'viewText', 'searchSections', 'setSearchSections', 'runSearchSection', 'setOwner', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',

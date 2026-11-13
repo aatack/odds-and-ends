@@ -422,9 +422,17 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   Assignments; its Focus is `BotView` (its model, cycle and state; Wake now; its last run in a line; Settings,
   folded, as a `Form`, with Delete there, asking first, which hands what it had back); its Comments are its own chat.
   Its header has no Delete.
-- **Every item has a right-click menu** (`useItemMenu`): Open and Debug, then what can be done to it
-  (`itemActions.ts`: Close for anything open, Reopen for anything closed; then the custom actions). The right pane
-  draws the same list as buttons (on a phone, the header's ⋯ menu), so they never differ. Closing anything sets its
+- **Every item has a right-click menu** (`useItemMenu`, `ItemMenu`), the same for every type, in sections; a row with
+  a submenu does its own thing when pressed and shows the submenu on hover. **Open** (its focus; hover: Comments,
+  Notes, Assignments, Debug, Edit log; a view picked is kept as its `display`), Rename for the topic on screen, and
+  **Copy** (its card text; hover: pill, card or focus text, as bots read it (`viewText`), or its id). Then the
+  links: **Pin to**, **Assign to**, **Set owner**, each pressed opening Choose… (the picker, a multiselect but for the
+  owner) and on hover offering a few suggestions (for pins, the item on screen and what was viewed lately; for people,
+  you, whoever things went to lately, the bots), Choose…, and under Unlink the links it has, each taken off when
+  pressed. Last, what can be done to it (`itemActions.ts`: Close for anything open, Reopen for anything closed; its
+  type's own, `TYPE_ACTIONS`, none yet; then the custom actions). The right pane
+  draws the same list as buttons (on a phone, the header's ⋯ menu), so they never differ. There are no thumbs-ups:
+  stored `reactions` values are left as they are, and read by nothing. Closing anything sets its
   `open` false and takes its owner and assignees off (kept as `last_owner`, `last_assignees`), so it floats free;
   Reopen sets it true and puts them back. Spread
   it on anything that stands for an item. Clicking an item does nothing else.

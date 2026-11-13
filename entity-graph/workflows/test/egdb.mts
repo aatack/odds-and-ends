@@ -56,11 +56,10 @@ const file = join(dir, 'round-trip.egdb')
   assert.match(recap, new RegExp(`set text on a topic \\[[^\\]]+\\] in "Round trip" \\[${id}\\]: Hi\\.`))
   assert.match(recap, /assigned "Round trip" .* to @alex/)
   assert.doesNotMatch(recap, /last_run|session_id/)
-  // A thumbs-up is a `reactions` value on the item: those who gave one.
+  // An item's values keep their history: who set each, and when.
   const hi = engine.detail(id)!.children.find((e) => e.params.text === 'Hi.')!.id
-  await engine.react(hi, true, 'alex')
-  await engine.react(hi, true, `bot:${bot}`)
-  await engine.react(hi, false, `bot:${bot}`)
+  await engine.setValue(hi, 'colour', 'red', 'alex')
+  await engine.setValue(hi, 'colour', 'blue', `bot:${bot}`)
   engine.customActions.save({ type: 'topic', name: 'Hello', description: 'd', notes: 'n', source: 'async () => "hi"', icon: 'zap', important: true })
   engine.settings.set('mcp.port', 1234)
   const done = (await engine.create('Done'))!
@@ -85,13 +84,11 @@ const file = join(dir, 'round-trip.egdb')
     before.detail.children.map((e) => [e.id, e.type, e.params, e.data, e.resolved, e.createdBy]))
   assert.ok(after.detail.children.filter((e) => !e.resolved && e.type !== 'topic' && e.type !== 'script').every((e) => e.nextCheckAt === clock))
   assert.equal(again.store.items.get(after.detail.children.filter((e) => e.type === 'script').at(-1)!.id)!.memo, 41)
-  assert.deepEqual(after.detail.children.find((e) => e.id === hi)!.reactions, ['alex'])
+  assert.equal(after.detail.children.find((e) => e.id === hi)!.params.colour, 'blue')
   assert.deepEqual([engine2.info('https://example.com/a?b=1#c')!.type, engine2.info('https://example.com/a?b=1#c')!.parentId], ['link', null], 'an item whose id is a URL reads back, in no task')
-  assert.ok(after.detail.children.filter((e) => e.id !== hi).every((e) => e.reactions.length === 0))
   // The edit log: what was done, by whom and when, the newest first.
   const log = await again.store.log({ entities: [hi] })
-  assert.deepEqual(log.filter((e) => e.key === 'reactions').map((e) => [e.by, e.value]),
-    [[`bot:${bot}`, ['alex']], [`bot:${bot}`, ['alex', `bot:${bot}`]], ['alex', ['alex']]])
+  assert.deepEqual(log.filter((e) => e.key === 'colour').map((e) => [e.by, e.value]), [[`bot:${bot}`, 'blue'], ['alex', 'red']])
   assert.ok(log.some((e) => e.kind === 'link' && e.key === 'comments' && e.other === hi))
   const renamed = await again.store.log({ entities: [id], keys: ['text'] })
   assert.deepEqual(renamed.map((e) => e.value), ['Round trip'])
@@ -153,7 +150,7 @@ const file = join(dir, 'round-trip.egdb')
   // A move is a link removed and another added: read back, the item sits where it went (made when and by whom it was).
   const notes = fourth.store
   const [moved, into] = ['n-moved', 'n-into'].map((nid, i) => {
-    notes.insertItem({ id: nid, parent_id: id, via: 'notes', seq: notes.nextSeq(id) + i, type: 'topic', params: { text: nid }, created_by: 'alex', created_at: Date.now(), resolved: true, resolved_at: null, resolved_by: null, cancelled: false, data: null, memo: null, reactions: [], next_check_at: null, last_error: null, runs: 0, added_n: 0, resolved_n: 0 })
+    notes.insertItem({ id: nid, parent_id: id, via: 'notes', seq: notes.nextSeq(id) + i, type: 'topic', params: { text: nid }, created_by: 'alex', created_at: Date.now(), resolved: true, resolved_at: null, resolved_by: null, cancelled: false, data: null, memo: null, next_check_at: null, last_error: null, runs: 0, added_n: 0, resolved_n: 0 })
     return nid
   })
   const movedAt = Date.now() + 5000
