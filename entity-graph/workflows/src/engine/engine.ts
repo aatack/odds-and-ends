@@ -1,7 +1,6 @@
 import { runScript } from './script'
 import { github } from './github'
 import { slackActions } from './slack'
-import { parseSlackLink } from '../shared/slack'
 import { Files, isText } from './files'
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
@@ -19,6 +18,7 @@ export { IDLE_MINUTES, MAX_SCRIPTS } from './settings'
 import { STATE_KEYS, Store, type ItemRow, type Inspection, type Via } from './store'
 import { viewText, type Size, type Who } from './views'
 import { focusKind } from '../shared/views'
+import { inferType, inferUrl } from '../shared/infer'
 
 /** What the app keeps on items for itself: never set by `setValue`. */
 const OWN_KEYS = new Set(['session_id', 'seen', 'last_run', 'last_wake', 'last_seen', 'handoff', 'key', 'last_owner', 'last_assignees'])
@@ -79,12 +79,10 @@ interface Run {
 const authorOf = (createdBy: string): Author => (createdBy === 'bot' || createdBy === 'script:bot' || createdBy.startsWith('bot:') ? 'bot' : 'human')
 
 /** `[id]()` in text: a reference to an item (a task, a bot, or a person by their username). */
-/** The item a URL is pulled in as: a Slack message, a Slack channel (its last day), or a link. */
+/** The item a URL is pulled in as: a Slack message, a Slack channel (its last day), a pull request, or a link (`inferUrl`). */
 function pulledIn(url: string, at: number): ItemSpec {
-  if (parseSlackLink(url)) return { type: 'slack_message', params: { link: url } }
-  const channel = /^https:\/\/[\w-]+(?:\.enterprise)?\.slack\.com\/archives\/([CGD][A-Z0-9]+)\/?(?:[?#].*)?$/.exec(url)
-  if (channel) return { type: 'slack_channel', params: { channel: channel[1], oldest: new Date(at - 24 * 60 * MINUTE).toISOString() } }
-  return { type: 'link', params: { url } }
+  const got = inferUrl(url, at)!
+  return { type: got.type as ItemSpec['type'], params: got.params }
 }
 
 export const refsIn = (text: string): string[] => [
@@ -106,7 +104,7 @@ export interface PromptItem {
 }
 
 /** What may sit in no topic: what is its own (topics, bots, people, scripts, the search item), and what is pinned rather than said (links, Slack, files). */
-const SIT_IN_NONE = ['topic', 'bot', 'user', 'script', 'link', 'slack_message', 'slack_channel', 'file']
+const SIT_IN_NONE = ['topic', 'bot', 'user', 'script', 'link', 'github_pr', 'slack_message', 'slack_channel', 'file']
 /** What has an owner (an `owns` link): who it goes back to. */
 const OWNED = ['topic', 'bot', 'script']
 
@@ -458,7 +456,8 @@ export class Engine extends EventEmitter {
 
   /** Any item, with what its views need. */
   itemInfoDetail(id: string, viewer = this.me()): ItemInfoDetail | null {
-    const info = this.info(id)
+    // An id no item has (a URL in text, say) is shown as what it looks like: `inferType`.
+    const info = this.info(id) ?? this.inferredInfo(id)
     if (!info) return null
     const parent = info.parentId ? this.get(info.parentId) : null
     const infos = (ids: string[]) => ids.flatMap((i) => (this.row(i) ? [this.toInfo(this.row(i)!)] : []))
@@ -473,8 +472,11 @@ export class Engine extends EventEmitter {
   }
 
   /** An item as egdb holds it: its values and links, and who made it and when. */
-  inspect(id: string): Promise<Inspection> {
-    return this.store.inspect(id)
+  /** An item as egdb holds it, with the type it looks like (`inferType`), for the debug view to offer. */
+  async inspect(id: string): Promise<Inspection> {
+    const it = await this.store.inspect(id)
+    const got = inferType(id, it.values)
+    return { ...it, inferred: got && this.typeOrNull(got.type) ? got.type : null }
   }
 
   /**
@@ -1427,9 +1429,43 @@ export class Engine extends EventEmitter {
     return out
   }
 
-  /** An item at a size, as text (views.ts): for a bot unless told, with ids; null if there is no such item. */
+  /** An item at a size, as text (views.ts): for a bot unless told, with ids; an id no item has, as what it looks like. */
   view(id: string, size: Size, opts: { ids?: boolean; offset?: number; limit?: number } = {}): string | null {
-    return viewText(this, id, size, { ids: true, who: this.who(), ...opts })
+    const read = { info: (i: string) => this.info(i) ?? this.inferredInfo(i), children: (i: string) => this.children(i), notes: (i: string) => this.notes(i) }
+    return viewText(read, id, size, { ids: true, who: this.who(), ...opts })
+  }
+
+  /**
+   * An id no item has, as the item it looks like (`inferType`: a URL a Slack message, a pull request, a link), made up
+   * for showing and not kept; null if it looks like nothing.
+   */
+  inferredInfo(id: string): ItemInfo | null {
+    if (this.row(id)) return null
+    const got = inferType(id)
+    if (!got || !this.typeOrNull(got.type)) return null
+    const at = this.now()
+    return this.toInfo({
+      id, parent_id: null, via: null, seq: 0, type: got.type, params: got.params, created_by: 'system', created_at: at,
+      resolved: true, resolved_at: at, resolved_by: 'system', cancelled: false, data: null, memo: null, next_check_at: null,
+      last_error: null, runs: 0, added_n: 0, resolved_n: 0,
+    })
+  }
+
+  /**
+   * Sets an item's type to what it looks like (`inferType`, from its id and values), with the params that type needs
+   * (what it has wins): the debug view's correction. An id no item has is made the item it looks like.
+   */
+  async setInferredType(id: string, actor = this.me()): Promise<void> {
+    const row = this.row(id)
+    const got = inferType(id, row?.params ?? {})
+    if (!got || !this.typeOrNull(got.type)) throw new Error(`${id} looks like no type.`)
+    const params = this.prepare([{ type: got.type as ItemSpec['type'], params: got.params }], 'human')[0].params
+    this.store.batch(() => {
+      if (!row) return this.addAs(id, { type: got.type as ItemSpec['type'], params }, actor)
+      this.store.setType(id, got.type, actor, this.now())
+      this.store.setParams(id, params, actor, this.now())
+    })
+    this.emit('change')
   }
 
   /** Who did something, as a bot is told: a name, and whether a person said it. */

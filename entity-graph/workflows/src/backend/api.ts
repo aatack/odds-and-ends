@@ -41,6 +41,7 @@ export function handlers(engine: Engine, admin: Admin, me: string, source = ''):
     newNotes: (title, pinTo) => engine.newNotes(title, pinTo, me),
     subtree: (itemId) => engine.subtree(itemId),
     viewText: (itemId, size) => engine.view(itemId, size, { ids: false }),
+    setInferredType: (itemId) => engine.setInferredType(itemId, me),
     finder: (who) => engine.finder(who, 16, me),
     setOwner: (itemId, owner) => engine.setOwner(itemId, owner, me),
     editLog: (query) => engine.store.log(query),

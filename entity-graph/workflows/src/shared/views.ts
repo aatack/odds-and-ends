@@ -24,6 +24,7 @@ export const DISPLAY: Record<ItemKind, Display> = {
   user: 'assignments',
   script: 'comments',
   link: 'focus',
+  github_pr: 'focus',
   slack_message: 'focus',
   slack_channel: 'focus',
   file: 'focus',

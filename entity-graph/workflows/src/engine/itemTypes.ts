@@ -135,6 +135,23 @@ export const user: ItemType = {
 }
 
 
+export const githubPr: ItemType = {
+  type: 'github_pr',
+  description:
+    'A GitHub pull request, pulled in: a PR link in a note becomes one (its id is the URL), so [url]() refers to it. Its focus is the ' +
+    'page itself; github_pr_view reads its state, checks and comments.',
+  params: {
+    url: z.string().regex(/^https:\/\/github\.com\//, 'A pull request\'s address: https://github.com/owner/repo/pull/n'),
+    repo: z.string().optional().describe('owner/repo, from the URL if left out.'),
+    number: z.number().optional().describe('Its number, from the URL if left out.'),
+    title: z.string().optional().describe('Its title, if known.'),
+  },
+  data: '—',
+  blocking: false,
+  bots: true,
+  describe: (p) => String(p.title || (p.number ? `${p.repo ?? ''}#${p.number}` : p.url)),
+}
+
 export const link: ItemType = {
   type: 'link',
   description:
@@ -199,4 +216,4 @@ export const file: ItemType = {
   describe: (p) => String(p.title || p.name || p.path || 'File'),
 }
 
-export const ITEM_TYPES: ItemType[] = [topic, script, link, file, slackMessage, slackChannel, bot, user]
+export const ITEM_TYPES: ItemType[] = [topic, script, link, githubPr, file, slackMessage, slackChannel, bot, user]

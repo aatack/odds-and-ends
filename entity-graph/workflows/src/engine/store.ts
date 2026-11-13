@@ -79,6 +79,8 @@ export interface Inspection {
   links: LinkView[]
   createdAt: number | null
   createdBy: string | null
+  /** The type it looks like, added by the engine (`inferType`). */
+  inferred?: string | null
 }
 
 /** Where the store's changes go to last: ops, as written by `author` at `at`. */
@@ -236,6 +238,16 @@ export class Store {
       by,
       at,
     )
+  }
+
+  /** Changes an item's type (the debug view's correction): its `type` value written anew; egdb keeps the old one. */
+  setType(id: string, type: string, by: string, at: number): void {
+    const row = this.items.get(id)
+    if (!row || row.type === type) return
+    this.byType.get(row.type)?.delete(id)
+    row.type = type
+    this.byType.set(type, (this.byType.get(type) ?? new Set()).add(id))
+    this.out([set(id, 'type', type)], by, at)
   }
 
   /** Changes an item's params: the values that changed are written (a param gone is cleared), as `by` at `at`. */

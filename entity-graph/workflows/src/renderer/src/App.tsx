@@ -438,7 +438,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
       />
       {w.error && <div className="error">{w.error}</div>}
       {home && w.empty && <p className="muted view-note">Nothing needs you.</p>}
-      <div className={`view-body ${!debug && (shown === 'comments' || shown === 'notes' || (shown === 'focus' && (e.type === 'file' || e.type === 'bot' || e.type === 'link'))) ? 'fill' : ''}`}>
+      <div className={`view-body ${!debug && (shown === 'comments' || shown === 'notes' || (shown === 'focus' && (e.type === 'file' || e.type === 'bot' || e.type === 'link' || e.type === 'github_pr'))) ? 'fill' : ''}`}>
         {debug ? (
           <DebugView id={e.id}>{mobile && pins}</DebugView>
         ) : shown === 'assignments' ? (
@@ -459,7 +459,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
           <ItemView key={e.id} detail={d.item} catalog={w.catalog} act={act} onOpen={openItem} mobile={mobile} />
         ) : e.type === 'file' ? (
           <FileFocus key={e.id} info={e} mobile={mobile} />
-        ) : e.type === 'link' ? (
+        ) : e.type === 'link' || e.type === 'github_pr' ? (
           <LinkFocus info={e} />
         ) : e.type === 'bot' ? (
           <BotView key={e.id} bot={w.overview.bots.find((b) => b.id === e.id) ?? null} act={w.act} mobile={mobile} />

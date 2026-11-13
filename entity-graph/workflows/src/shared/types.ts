@@ -8,7 +8,7 @@
  * which stay open until something happens (a script says it is done, an approval
  * is given, a child item closes).
  */
-export type ItemKind = 'topic' | 'script' | 'link' | 'slack_message' | 'slack_channel' | 'file' | 'bot' | 'user'
+export type ItemKind = 'topic' | 'script' | 'link' | 'github_pr' | 'slack_message' | 'slack_channel' | 'file' | 'bot' | 'user'
 
 /** An item as it is added. `ref` names it, so another added alongside can point at it. */
 export interface ItemSpec {
@@ -181,6 +181,8 @@ export interface Inspection {
   links: { type: string; direction: 'outbound' | 'inbound'; other: string; sort: number | null; at: number | null; by: string | null }[]
   createdAt: number | null
   createdBy: string | null
+  /** The type it looks like (from its id and values: `inferType`), if any; the debug view offers it when `type` differs. */
+  inferred?: string | null
 }
 
 /** A person: a `user` item in no item, whose id is their username. */
@@ -403,6 +405,8 @@ export interface WorkflowsAPI {
   subtree: (itemId: string) => Promise<ItemInfo[]>
   /** An item as text at a size, as bots read it (`engine/views.ts`): Copy in its menu. Null if there is no such item. */
   viewText: (itemId: string, size: 'pill' | 'card' | 'focus') => Promise<string | null>
+  /** Sets an item's type to the one it looks like (or makes an id no item has into it): the debug view's correction. */
+  setInferredType: (itemId: string) => Promise<void>
   /** What the finder reads from the store for any of `who`: what is pinned to them, and what was assigned to them and no longer is (the latest first). */
   finder: (who: string[]) => Promise<{ pinned: Item[]; unassigned: Item[] }>
   /** Gives an item to an owner (a username or a bot), or to nobody (null). */
@@ -512,7 +516,7 @@ export interface LogEntry {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'viewText', 'finder', 'setOwner', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'viewText', 'setInferredType', 'finder', 'setOwner', 'editLog',
   'typeScripts', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',

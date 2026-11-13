@@ -120,8 +120,12 @@ shrink.
   open/closed are the same), `section`, and `display` (which view it opens on: see **Views** under UI). Its comments are its history; its notes a tree of topics. Closing writes
   `open: false`; topics never write `resolved`. Some items resolve as they are added (a comment); **blockers** wait
   until something happens. Topics don't depend on, or attach to, each other: an open topic in another is
-  a card in its chat, and blocks nothing. There are eight types: `topic`, `script`, `link`, `file`, `slack_message`,
+  a card in its chat, and blocks nothing. There are nine types: `topic`, `script`, `link`, `github_pr`, `file`, `slack_message`,
   `slack_channel`, `bot` and `user` (a person). An older build's `widget`, `process`, `search` and `approval` items are left out on load.
+- **Inferred types** (`shared/infer.ts`): what an item looks like from its id and values (a Slack link a Slack
+  message or channel, a GitHub PR link a `github_pr`, any other URL a `link`; values only one type has, that type).
+  URLs in text are pulled in by it; an id no item has is shown as the item it looks like (`Engine.inferredInfo`, not
+  kept); the debug view shows what an item looks like and, when its type differs, offers to set it (`setInferredType`).
 - **People** are items too (`user` items, in no item, whose id is their username); they sign in to the
   app by typing their username (no password: the app is local). Anything can be **assigned** to people, bots and
   scripts: an `assignees` link from the item, not an item (`Engine.setAssignee`; what someone has is their links

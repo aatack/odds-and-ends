@@ -126,7 +126,7 @@ const blockers = (id: string) => item(id).blockers.map((b) => b.type)
 const last = (id: string, type: string) => engine.children(id).filter((e) => e.type === type).at(-1)!
 
 // The types there are; those from before are gone.
-assert.deepEqual(engine.itemTypes.map((t) => t.type), ['topic', 'script', 'link', 'file', 'slack_message', 'slack_channel', 'bot', 'user'])
+assert.deepEqual(engine.itemTypes.map((t) => t.type), ['topic', 'script', 'link', 'github_pr', 'file', 'slack_message', 'slack_channel', 'bot', 'user'])
 await assert.rejects(engine.addItems((await engine.create('x'))!, [{ type: 'message' as 'note', params: { text: 'x' } }]), /No item type message/)
 for (const i of engine.overview().items.filter((i) => i.type === 'topic')) await engine.close(i.id)
 
@@ -488,6 +488,23 @@ await engine.close(loose)
   await engine.runNow(old)
   for (const id of [mine, loose, old]) await engine.cancel(id)
   await engine.close(t)
+}
+
+// An id no item has is shown as what it looks like; an item whose type differs from that can be corrected.
+{
+  const pr = 'https://github.com/o/r/pull/42'
+  assert.equal(engine.itemInfoDetail(pr)!.info.type, 'github_pr', 'a PR link no item has reads as a pull request')
+  assert.equal(engine.itemInfoDetail('https://acme.slack.com/archives/C0123ABCD/p1700000000123456')!.info.type, 'slack_message')
+  assert.equal(engine.itemInfoDetail('https://example.com/x')!.info.type, 'link')
+  assert.equal(engine.itemInfoDetail('not-a-thing'), null)
+  assert.match(engine.view(pr, 'pill')!, /\[github_pr\] o\/r#42/)
+  const [old] = await engine.addItems(null, [{ type: 'link', params: { url: 'https://github.com/o/r/pull/7', title: 'Old PR' } }])
+  assert.equal((await engine.inspect(old)).inferred, 'github_pr')
+  await engine.setInferredType(old)
+  assert.equal(engine.info(old)!.type, 'github_pr')
+  assert.equal(engine.info(old)!.params.title, 'Old PR', 'what it had is kept')
+  await engine.setInferredType('https://example.com/made')
+  assert.equal(engine.info('https://example.com/made')!.type, 'link', 'an id no item has is made the item it looks like')
 }
 
 // What is pinned to someone shows in their finder (finder: pinned).

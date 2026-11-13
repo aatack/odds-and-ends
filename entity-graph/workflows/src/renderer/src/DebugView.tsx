@@ -27,6 +27,20 @@ export function DebugView({ id, children }: { id: string; children?: ReactNode }
               <td className="muted">id</td>
               <td className="mono">{it.id}</td>
             </tr>
+            {/* What it looks like (from its id and values), and the correction when its type says otherwise. */}
+            {it.inferred && (
+              <tr>
+                <td className="muted">looks like</td>
+                <td>
+                  {it.inferred}
+                  {it.inferred !== it.values.type && (
+                    <button data-ui className="debug-fix" onClick={() => void api().setInferredType(it.id).catch((e: Error) => setError(e.message))}>
+                      {it.values.type ? `Change its type from ${String(it.values.type)} to ${it.inferred}` : `Make it a ${it.inferred}`}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            )}
             <tr>
               <td className="muted">created</td>
               <td>
