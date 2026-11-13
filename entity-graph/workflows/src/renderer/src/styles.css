@@ -295,11 +295,11 @@ button[data-ui].blocker-text { text-align: left; padding: 0; overflow: hidden; t
 .items-view .row:hover { background: none; }
 .items-view .row.selected { background: var(--color-gray-100); box-shadow: none; }
 .items-view .search { padding-right: 150px; }
-/* In a picker (a modal): the finder its full width, and its search line pinned at the top while the rows scroll under
-   it, with the card's colour round it so nothing shows past its rounded ends. */
-.picker { padding-top: 4px; }
-.picker .items-view { max-width: none; }
-.picker .items-view .search { position: sticky; top: 0; z-index: 2; box-shadow: 0 -4px 0 4px var(--color-white); }
+.items-scroll { display: flex; flex-direction: column; gap: 16px; }
+/* In a picker (a modal): the finder its full width, the search line fixed at the top and only the rows below it scrolling. */
+.picker { display: flex; flex-direction: column; padding-top: 4px; }
+.picker .items-view { flex: 1; min-height: 0; max-width: none; }
+.picker .items-scroll { flex: 1; min-height: 0; overflow-y: auto; }
 .keys { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; gap: 6px; pointer-events: none; }
 .key-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 3px; border-radius: 10px; background: var(--color-gray-200); color: var(--color-gray-600); font-size: 11px; }
 .key-pill kbd { font: inherit; font-size: 10px; padding: 1px 5px; border-radius: 6px; background: var(--color-gray-300); color: var(--ink); }

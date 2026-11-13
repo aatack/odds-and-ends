@@ -228,6 +228,8 @@ export function ItemsList(props: {
         )}
       </div>
 
+      {/* The rows, under the search line: in a picker, they scroll on their own while it stays put. */}
+      <div className="items-scroll">
       {groups.map((g) => (
         <section key={g.id} className="list items-group">
           <h3>
@@ -268,6 +270,7 @@ export function ItemsList(props: {
         </section>
       ))}
       {!flat.length && !groups.length && <p className="muted">{text.trim() ? 'Nothing matches.' : 'No tasks.'}</p>}
+      </div>
       {adding && (
         <ItemPicker
           title={ADDABLE[adding]!.title}
