@@ -4,8 +4,6 @@
 // card and focus are: `TYPE_ACTIONS`.
 
 import { CircleCheck, RotateCcw, type LucideIcon } from 'lucide-react'
-import type { CustomAction } from '../../shared/types'
-import { actionIcon } from './actionIcons'
 import { api } from './useWorkflows'
 
 export interface ItemAction {
@@ -30,26 +28,15 @@ export const TYPE_ACTIONS: Partial<Record<string, (e: Target, ctx: { act: Act })
 
 /**
  * The actions on an item: anything open can be closed (it floats free: its owner and assignees come off it, and come
- * back when it is reopened), anything closed reopened. Then its type's own (`TYPE_ACTIONS`), then the person's own
- * actions for its type (`custom`), from the Types page.
+ * back when it is reopened), anything closed reopened. Then its type's own (`TYPE_ACTIONS`). Scripts a type owns are
+ * offered beside these (`typeScripts`).
  */
-export function itemActions(e: Target, ctx: { act: Act; custom?: CustomAction[] }): ItemAction[] {
+export function itemActions(e: Target, ctx: { act: Act }): ItemAction[] {
   const own: ItemAction[] = e.closed
     ? [{ id: 'reopen', label: 'Reopen', important: true, icon: RotateCcw, tone: '', run: () => void ctx.act(() => api().reopen(e.id)) }]
     : [{ id: 'close', label: 'Close', important: true, icon: CircleCheck, tone: 'text-success-600 hover:text-success-600', run: () => void ctx.act(() => api().close(e.id)) }]
   return [
     ...own,
     ...(TYPE_ACTIONS[e.type]?.(e, ctx) ?? []),
-    ...(ctx.custom ?? [])
-      .filter((c) => c.type === e.type)
-      .map((c) => ({
-        id: `custom:${c.id}`,
-        label: c.name,
-        title: c.description ? `${c.name}: ${c.description}` : c.name,
-        icon: actionIcon(c.icon),
-        tone: '',
-        important: c.important,
-        run: () => void ctx.act(() => api().runCustomAction(c.id, e.id)),
-      })),
   ]
 }

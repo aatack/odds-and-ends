@@ -2,7 +2,6 @@ import { runScript } from './script'
 import { github } from './github'
 import { slackActions } from './slack'
 import { parseSlackLink } from '../shared/slack'
-import { CustomActions } from './customActions'
 import { Files, isText } from './files'
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
@@ -144,7 +143,6 @@ export class Engine extends EventEmitter {
   readonly itemTypes: ItemType[] = ITEM_TYPES
   readonly presets: Preset[] = PRESETS
   /** People's own actions, per item type (the Types page). */
-  readonly customActions: CustomActions
   /** Stops a bot's run. Set by the runner. */
   onCancel: (agentId: string) => void = () => {}
   /** The run each bot has going, by the bot's id. In memory only: a crash leaves nothing behind. */
@@ -170,7 +168,6 @@ export class Engine extends EventEmitter {
     this.now = opts.now ?? Date.now
     this.dataDir = opts.dataDir ?? join(tmpdir(), 'workflows')
     this.files = new Files(join(this.dataDir, 'files'))
-    this.customActions = new CustomActions(this, this.store)
     for (const r of [...this.store.ofType('bot'), ...this.store.ofType('script')]) {
       const seen = r.params.last_seen && typeof r.params.last_seen === 'object' ? (r.params.last_seen as Record<string, number>) : {}
       this.marks.set(r.id, new Map(Object.entries(seen).map(([item, at]) => [item, { n: 0, at: Number(at) }])))

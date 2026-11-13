@@ -591,3 +591,7 @@ button[data-ui].script-card.whole:hover { background: var(--color-gray-200); fil
 
 /* Home: how this works, as a page to read. */
 .home-doc { max-width: 760px; line-height: 1.6; }
+/* The scripts a type owns, on the Types page: each a card that opens it. */
+.type-scripts { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.type-script { padding: 8px 10px; border-radius: 8px; background: var(--color-gray-100); font-size: 13px; }
+.type-script:hover { background: var(--color-gray-200); }

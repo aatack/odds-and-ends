@@ -2,7 +2,7 @@ import { autoUpdate, flip, offset, shift, useFloating } from '@floating-ui/react
 import { useAtom, useSetAtom } from 'jotai'
 import { ChevronRight, X } from 'lucide-react'
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
-import type { CustomAction, ItemInfoDetail, Overview } from '../../shared/types'
+import type { ItemInfoDetail, Overview } from '../../shared/types'
 import { DISPLAYS, type Display } from '../../shared/views'
 import { ItemPicker } from './ItemPicker'
 import type { Recent } from './sections'
@@ -37,7 +37,7 @@ const SUGGESTED = 5
  *   now, to take off.
  * - **Its actions** (`itemActions`: Close or Reopen, its type's own, the custom ones), as the right pane has them.
  */
-export function ItemMenu({ actOn, custom, overview, recent }: { custom: CustomAction[]; overview: Overview; recent: Recent; actOn: (id: string) => Act }) {
+export function ItemMenu({ actOn, overview, recent }: { overview: Overview; recent: Recent; actOn: (id: string) => Act }) {
   const [menu, setMenu] = useAtom(menuAtom)
   const [views, setViews] = useAtom(viewsAtom)
   const setRename = useSetAtom(renameAtom)
@@ -216,7 +216,7 @@ export function ItemMenu({ actOn, custom, overview, recent }: { custom: CustomAc
       {info && (
         <>
           <div className="menu-separator" />
-          {itemActions(info, { act: actOn(id), custom }).map((a) => (
+          {itemActions(info, { act: actOn(id) }).map((a) => (
             <button key={a.id} className="menu-action" title={a.title} onMouseEnter={() => setSub(null)} onClick={done(a.run)}>
               <a.icon className={`icon ${a.tone}`} />
               {a.label}

@@ -27,8 +27,7 @@ follow a link) is not listed. Keep this list current: see AGENTS.md. Each rule i
 | `cycle_minutes` | On bots and scripts: how long before it runs on an item it still holds again (30). An old `debounce_minutes` is ignored. | B `cycleMinutes`, `due` |
 | `migration.links_until` (a setting) | Up to when an older build's links have been read in (`migrate`). | B `egdb.ts` |
 | `derives_from` | egdb: an entity reads its source's values under its own (not yet used by the app). | egdb `read.rs` |
-| `wf.setting`, `wf.custom_action`, `wf.root` types | The app's own entities, not items: settings, custom actions, the root. | B `egdb.ts`, `store.ts` |
-| `task`, `note` as a custom action's type | Read as `topic`'s. | B `customActions.ts` |
+| `wf.setting`, `wf.custom_action`, `wf.root` types | The app's own entities, not items: settings, the root; `wf.custom_action` (an older build's custom actions) is skipped. | B `egdb.ts`, `store.ts` |
 
 ## Links
 

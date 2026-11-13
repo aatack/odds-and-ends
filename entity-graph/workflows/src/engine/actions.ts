@@ -33,7 +33,6 @@ export const LEGACY_PARAMS: Record<string, Record<string, string>> = {
   add_items: { events: 'items' },
   pin: { event_ids: 'item_ids' },
   cancel_item: { event_id: 'item_id' },
-  run_custom_action: { event_id: 'item_id' },
 }
 
 /** A call by an old name, or with old parameters, as it is called now. */
@@ -221,26 +220,6 @@ export const itemActions: Action[] = [
         running: b.runId !== null,
         assigned: b.assigned,
       })),
-  },
-  {
-    name: 'custom_actions',
-    unsafe: false,
-    description:
-      "The human's own actions, defined per item type on the Types page: each a script over the safe actions. With type, only " +
-      'those for that item type. Run one with run_custom_action.',
-    input: { type: z.string().optional().describe('An item type, e.g. item.') },
-    run: async (a, { engine }) =>
-      engine.customActions
-        .list()
-        .filter((c) => !a.type || c.type === a.type)
-        .map(({ id, type, name, description, important }) => ({ id, type, name, description, important })),
-  },
-  {
-    name: 'run_custom_action',
-    unsafe: false,
-    description: 'Run one of the custom actions on an item of its type: what it says is added in the item, as an action item.',
-    input: { action_id: z.string().describe('From custom_actions.'), item_id: z.string().describe('The item (a topic, or one in it) to run it on.') },
-    run: async (a, ctx) => ctx.engine.customActions.run(String(a.action_id), String(a.item_id), ctx.actor, ctx.runId),
   },
   {
     name: 'get_item',

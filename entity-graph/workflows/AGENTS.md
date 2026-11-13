@@ -162,8 +162,8 @@ shrink.
   someone cancels it: it can't end itself, a run that throws says so in its chat (once per new error) and it runs
   again on its cycle, and closing a topic it sits in leaves it be. `mentions(topic)` and
   `refs(item, type)` help it read what it was asked. See `SCRIPT_DOC` in `itemTypes.ts`. Useful scripts (Snooze, Slack wait, Merge) are
-  made in the app, not written into the code; the default actions hand topics to them by name. Custom actions (the Types page) are scripts too,
-  run on an item when asked (one kept for type `task` or `note` reads as `topic`'s); `run_script` runs one once.
+  made in the app, not written into the code; the default actions hand topics to them by name. There are no custom actions any more: a script
+  owned by an item type does their job (an older build's `wf.custom_action` entities are skipped); `run_script` runs code once.
 - The chat input sends a comment by default; `@` a bot or a person in it to hand them the item (and take it
   off the sender). With nothing typed it offers the default actions, a curated list in code
   (`renderer/src/defaultActions.ts`): assign to the last bot, and, when scripts by these names exist, "Slack wait" for each recent Slack message and "Snooze" for an hour or a day. Tab steps through the
@@ -183,7 +183,7 @@ shrink.
 merging, sending, deploying and deleting, in any integration.
 
 - `unsafe` is a required field on `Action`, so every new action has to declare it. If in doubt, it is unsafe.
-- **For now it is a label, not a gate** (aatack, Nov 2026): bots, scripts and custom actions are given every tool,
+- **For now it is a label, not a gate** (aatack, Nov 2026): bots, scripts and custom-made scripts are given every tool,
   unsafe ones too (the only ones are GitHub's and `slack_post`, which a bot could run with its shell anyway). The
   bots' instructions say to act outside the app only when a person asked. The MCP page and the `/` tool runner mark
   unsafe tools. There are no approvals any more: an older build's `approval` items are left out on load.
@@ -401,13 +401,9 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   screen: its first line becomes a text box, `renameAtom`) and its actions. `[id]()` references in text (topics, bots,
   people) have the same menu on right-click.
 - **The Types page** (`TypesPage`) lists every item type: what it is for, whether it blocks, its fields (the
-  Fields button: its params' schema and what it resolves with), and its actions. The app's own are in `itemActions.ts`;
-  the human's own are **custom actions** (`engine/customActions.ts`, the `custom_actions` table): per type, a name, a
-  description, hidden notes, an icon, *important* or not, and a script `async (context, actions) => null | string |
-  { message?, items? }` run in QuickJS with the item's context and only the safe actions. **Generate** has Sonnet write
-  the script from the description and notes. What a run says is a comment in the item, by `script`. Important
-  actions are, as all an item's actions, buttons in the right pane, and in the right-click menu.
-  Agents list and run them with `custom_actions` and `run_custom_action`.
+  Fields button: its params' schema and what it resolves with), its actions (the app's own, in `itemActions.ts`), and
+  the **scripts it owns** (`typeScripts`), as cards that open them; **New script** makes one owned by the type. Every
+  item of the type offers those scripts in its right pane. Bots add them as any script (`set_owner` to the type).
 - **Starting** (`Start`, before anything else): a username and a source, both needed. Opening the source
   starts (or finds) its backend; signing in makes the person if there is nobody by that username yet. Both
   are kept in local storage (`userAtom`, `sourceAtom`), and the preload sends the username with every call.
@@ -427,7 +423,7 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   owner) and on hover offering a few suggestions (for pins, the item on screen and what was viewed lately; for people,
   you, whoever things went to lately, the bots), Choose…, and under Unlink the links it has, each taken off when
   pressed. Last, what can be done to it (`itemActions.ts`: Close for anything open, Reopen for anything closed; its
-  type's own, `TYPE_ACTIONS`, none yet; then the custom actions). The right pane
+  type's own, `TYPE_ACTIONS`, none yet). The right pane
   draws the same list as buttons (on a phone, the header's ⋯ menu), so they never differ. There are no thumbs-ups:
   stored `reactions` values are left as they are, and read by nothing. Closing anything sets its
   `open` false and takes its owner and assignees off (kept as `last_owner`, `last_assignees`), so it floats free;

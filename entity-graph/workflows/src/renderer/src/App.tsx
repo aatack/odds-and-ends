@@ -164,7 +164,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
           <ItemsMain mobile={mobile} />
           {mobile && <AppMenu mobile={mobile} onSignOut={onSignOut} onCloseSource={onCloseSource} />}
         </div>
-        <ItemMenu actOn={items.actOn} custom={items.customActions} overview={items.overview} recent={items.recent} />
+        <ItemMenu actOn={items.actOn} overview={items.overview} recent={items.recent} />
       </ItemRefContext.Provider>
       </OverviewContext.Provider>
     </ItemsContext.Provider>
@@ -387,7 +387,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         <div className="view-body">{body}</div>
       </div>,
     )
-  if (w.view?.kind === 'types') return page('Types', w.catalog && <TypesPage catalog={w.catalog} custom={w.customActions} act={w.act} mobile={mobile} />)
+  if (w.view?.kind === 'types') return page('Types', w.catalog && <TypesPage catalog={w.catalog} act={w.act} onOpen={openItem} version={w.overview} mobile={mobile} />)
   if (w.view?.kind === 'bots') return page('Bots', <BotsPage bots={w.overview.bots} act={w.act} onOpen={openItem} mobile={mobile} />)
   if (w.view?.kind === 'log')
     return page('Edit log', <LogPage key={w.view.id ?? ''} overview={w.overview} recent={w.recent} entities={w.view.id ? [w.view.id] : []} mobile={mobile} />)
@@ -428,7 +428,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
           mobile && !debug ? (
             <>
               {d.item && <AssigneePill item={d.item.item} overview={w.overview} act={act} />}
-              <HeaderActions actions={itemActions(e, { act, custom: w.customActions })} mobile />
+              <HeaderActions actions={itemActions(e, { act })} mobile />
             </>
           ) : undefined
         }
@@ -473,7 +473,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
 function ItemSide({ detail: d, act, pins }: { detail: ItemInfoDetail; act: Act; pins: ReactNode }) {
   const w = useItems()
   const e = d.info
-  const actions = itemActions(e, { act, custom: w.customActions })
+  const actions = itemActions(e, { act })
   return (
     <>
       <section className="side-section">

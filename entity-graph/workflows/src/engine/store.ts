@@ -60,19 +60,6 @@ export interface ItemRow {
   resolved_n: number
 }
 
-export interface CustomActionRow {
-  id: string
-  type: string
-  name: string
-  description: string
-  notes: string
-  source: string
-  icon: string
-  important: boolean
-  created_at: number
-  updated_at: number
-}
-
 /** One link, as the debug view shows it. */
 export interface LinkView {
   type: string
@@ -148,7 +135,6 @@ export class Store {
   private kids = new Map<string | null, ItemRow[]>()
   private byType = new Map<string, Set<string>>()
   readonly settings = new Map<string, unknown>()
-  readonly customActions = new Map<string, CustomActionRow>()
   /** `assignees` links: each item's assignees, with when (and at which moment) and by whom; and each assignee's items. */
   private assigneesOf = new Map<string, Map<string, Assigned>>()
   private itemsOf = new Map<string, Set<string>>()
@@ -436,20 +422,6 @@ export class Store {
     this.out([set(e, 'type', 'wf.setting'), set(e, 'key', key), set(e, 'value', JSON.stringify(value))], by, this.now())
   }
 
-  putCustomAction(row: CustomActionRow): void {
-    this.customActions.set(row.id, row)
-    const e = `custom-action:${row.id}`
-    // `type` is egdb's own key, so the event type the action is for is `for_type`.
-    const { type, ...rest } = row
-    this.out([set(e, 'type', 'wf.custom_action'), set(e, 'for_type', type), ...Object.entries(rest).map(([k, value]) => set(e, k, value))], 'system', this.now())
-  }
-
-  deleteCustomAction(id: string): void {
-    if (!this.customActions.delete(id)) return
-    // A null type archives the entity in egdb: it is kept, and read no more.
-    this.out([set(`custom-action:${id}`, 'type', null)], 'system', this.now())
-  }
-
   // ---- inspecting ----
 
   /** An item as egdb holds it; with no egdb (the tests), as memory has it. */
@@ -487,7 +459,6 @@ export class Store {
   restore(saved: {
     items: ItemRow[]
     settings: [string, unknown][]
-    customActions: CustomActionRow[]
     assigned?: { item: string; to: string; at: number; by: string }[]
     pinned?: { from: string; id: string; at: number; by: string }[]
     owners?: { item: string; owner: string; at: number; by: string }[]
@@ -497,7 +468,6 @@ export class Store {
     for (const a of saved.assigned ?? []) this.link(a.item, a.to, { at: a.at, by: a.by, n: 0 })
     for (const r of [...saved.items].sort((a, b) => a.seq - b.seq)) this.index(r)
     for (const [k, value] of saved.settings) this.settings.set(k, value)
-    for (const r of saved.customActions) this.customActions.set(r.id, r)
   }
 }
 
@@ -563,17 +533,3 @@ export function itemFromValues(
   }
 }
 
-export function customActionFromValues(x: Values): CustomActionRow {
-  return {
-    id: str(x.id) ?? '',
-    type: str(x.for_type) ?? '',
-    name: str(x.name) ?? '',
-    description: str(x.description) ?? '',
-    notes: str(x.notes) ?? '',
-    source: str(x.source) ?? '',
-    icon: str(x.icon) ?? 'zap',
-    important: x.important === true,
-    created_at: num(x.created_at) ?? 0,
-    updated_at: num(x.updated_at) ?? 0,
-  }
-}

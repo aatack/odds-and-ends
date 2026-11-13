@@ -8,11 +8,12 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { EgdbClient, type Filter, type Op } from 'egdb-client'
 import {
-  customActionFromValues, itemFromValues, legacyValues, ROOT, Store, type CustomActionRow, type ItemRow, type Inspection, type LinkView, type Sink, type Via,
+  itemFromValues, legacyValues, ROOT, Store, type ItemRow, type Inspection, type LinkView, type Sink, type Via,
 } from './store'
 
 const BRANCH_NAME = 'workflows'
 /** The kinds of entity that are not items. */
+// `wf.custom_action`: an older build's custom actions, which are no more (scripts owned by a type do their job); skipped.
 const OWN_TYPES = ['wf.root', 'wf.setting', 'wf.custom_action']
 /** The links an item may have, as the loader and the debug view read them (`contains` and `assigned_to`: an older build's). */
 const LINK_TYPES = ['comments', 'notes', 'pins', 'assignees', 'owns', 'contains', 'assigned_to'] as const
@@ -172,7 +173,6 @@ export async function loadStore(
   const branch = await storeBranch(client)
   const stored = new Map<string, Record<string, unknown>>()
   const settings: [string, unknown][] = []
-  const customActions: CustomActionRow[] = []
   await findAll(client, branch, { and: [{ not_null: { key: 'type' } }, { not: { in: { key: 'type', values: OWN_TYPES } } }] }, (id, x) => {
     if ('params' in x && 'created_by' in x) throw new Error('This source was made by an earlier build of the app, which kept items differently: start a new source.')
     stored.set(id, x)
@@ -184,7 +184,6 @@ export async function loadStore(
       // A setting that does not read is left out, as if it were never set.
     }
   })
-  await findAll(client, branch, { eq: { key: 'type', value: 'wf.custom_action' } }, (_id, x) => customActions.push(customActionFromValues(x)))
   const sink = new EgdbSink(client, branch, onError)
   const at = now()
   const migratedUntil = Number(settings.find(([k]) => k === MIGRATED)?.[1] ?? 0)
@@ -254,7 +253,6 @@ export async function loadStore(
   store.restore({
     items: rows,
     settings,
-    customActions,
     assigned: assigned.filter((a) => kept.has(a.item)),
     pinned: pinned.filter((p) => kept.has(p.from) && kept.has(p.id)),
     owners: owners.filter((o) => kept.has(o.item)),

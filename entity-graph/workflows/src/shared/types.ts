@@ -380,7 +380,7 @@ export interface WorkflowsAPI {
   editLog: (query: LogQuery) => Promise<LogEntry[]>
   /** Adds items in a task, as the person signed in: what the chat input's default actions do. */
   /** Adds items in an item: in its comments, or (`via` notes) in its notes. */
-  addItems: (itemId: string, specs: ItemSpec[], via?: 'comments' | 'notes') => Promise<string[]>
+  addItems: (itemId: string | null, specs: ItemSpec[], via?: 'comments' | 'notes') => Promise<string[]>
   /** Keeps a file (its bytes, base64) with the source, as a file item in the task: answers its id. */
   uploadFile: (itemId: string, name: string, base64: string) => Promise<string>
   /** A file item's bytes (base64), name and type. */
@@ -407,13 +407,8 @@ export interface WorkflowsAPI {
   finder: (who: string[]) => Promise<{ pinned: Item[]; unassigned: Item[] }>
   /** Gives an item to an owner (a username or a bot), or to nobody (null). */
   setOwner: (itemId: string, owner: string | null) => Promise<void>
-  customActions: () => Promise<CustomAction[]>
-  saveCustomAction: (a: Omit<CustomAction, 'id'> & { id?: string }) => Promise<CustomAction>
-  removeCustomAction: (id: string) => Promise<void>
-  /** Runs a custom action on an item. */
-  runCustomAction: (id: string, itemId: string) => Promise<void>
-  /** Writes a custom action's code from its description and notes, with a model. */
-  generateCustomAction: (a: { type: string; name: string; description: string; notes: string; source?: string }) => Promise<string>
+  /** The open scripts an item type owns (`set_owner` to the type's name): the Types page's, and every item of it offers them. */
+  typeScripts: (type: string) => Promise<ItemInfo[]>
   /** Renames an item: its title changes (egdb keeps the old one). */
   rename: (id: string, title: string) => Promise<void>
   /** Makes a bot (no id) or changes its settings. */
@@ -515,28 +510,10 @@ export interface LogEntry {
   removed: boolean
 }
 
-/** One of the human's own actions, for items of one type: a script, usually written by a model from its description and notes. */
-export interface CustomAction {
-  id: string
-  /** The item type it is for. */
-  type: string
-  name: string
-  /** What it does: shown, and what its code is written from. */
-  description: string
-  /** More for the model writing its code; shown only on the Types page. */
-  notes: string
-  /** async (context, actions) => null | string | { message?, items? } */
-  source: string
-  /** A lucide icon, by its name in the Types page's list. */
-  icon: string
-  /** Shown as a button in an item's header; the rest are in the menu beside them. */
-  important: boolean
-}
-
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
   'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'viewText', 'finder', 'setOwner', 'editLog',
-  'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
+  'typeScripts', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',
 ] as const satisfies readonly ApiMethod[]

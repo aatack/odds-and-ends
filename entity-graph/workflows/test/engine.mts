@@ -959,27 +959,6 @@ await engine.close(bad)
   await engine.close(t)
 }
 
-// ---- 13. Custom actions: scripts per item type, run on an item; what they say is a note ----
-{
-  const ca = engine.customActions
-  const task = (await engine.create('Custom'))!
-  const hello = ca.save({ type: 'task', name: 'Hello', description: 'Says hello', notes: '', source: '', icon: 'zap', important: true })
-  await assert.rejects(ca.run(hello.id, task), /no code yet/)
-  const source = await ca.generate({ type: 'task', name: 'Hello', description: 'Says hello to the task', notes: 'Use its title' })
-  assert.equal(source, 'return `Hello ${context.item.title}`')
-  assert.match(generateArgs[generateArgs.indexOf('--system-prompt') + 1], /post_somewhere/, 'it may call any action')
-  ca.save({ ...hello, source })
-  await ca.run(hello.id, task)
-  assert.equal(last(task, 'topic').params.text, 'Hello Custom')
-  assert.equal(last(task, 'topic').createdBy, 'script')
-  const sneaky = ca.save({ type: 'task', name: 'Post', description: '', notes: '', icon: 'zap', important: false, source: `return tools.post_somewhere({ text: 'x' })` })
-  await ca.run(sneaky.id, task)
-  assert.equal(posted.pop(), 'x')
-  ca.remove(sneaky.id)
-  assert.equal(ca.get(sneaky.id), null)
-  await engine.close(task)
-}
-
 // ---- 14. The MCP endpoints: the same tools for a bot and anything else, the unsafe ones too ----
 {
   const probe = (await engine.create('Probe'))!

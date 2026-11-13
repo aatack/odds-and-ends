@@ -67,11 +67,9 @@ memory, not stored, so a crash leaves nothing to clean up.
 **For agents:** `src/engine/paradigm.ts` is the paradigm in a few lines: the MCP
 server's instructions, and the `paradigm` action. Keep it that short.
 
-**Custom actions:** `src/engine/customActions.ts`. People define them per item
-type on the Types page: each a script. `custom_actions` lists them and
-`run_custom_action` runs one on an item (one kept for `task` or `note` is a
-topic's). What a run says is a comment in the item,
-by `script`.
+**Scripts for a type:** a script owned by an item type (`set_owner` to its name)
+is listed on the Types page and offered in the right pane of every item of that
+type, which runs it on the item. (They replace custom actions.)
 
 **Reads:** `get_item` (an item in full, with its owner), `get_children` (the items
 in an item's comments; with `notes`, its notes; with `open`, its blockers),

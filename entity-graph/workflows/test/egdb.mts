@@ -66,20 +66,18 @@ const file = join(dir, 'round-trip.egdb')
   const still = (await engine.create('Still yours', { actor: 'alex' }))!
   assert.ok((await engine.finder(['alex'])).unassigned.some((i) => i.id === was))
   assert.ok(!(await engine.finder(['alex'])).unassigned.some((i) => i.id === still), 'not what is still assigned')
-  engine.customActions.save({ type: 'topic', name: 'Hello', description: 'd', notes: 'n', source: 'async () => "hi"', icon: 'zap', important: true })
   engine.settings.set('mcp.port', 1234)
   const done = (await engine.create('Done'))!
   await engine.close(done)
   await store.flush()
-  const before = { overview: engine.overview(), detail: engine.detail(id)!, bot: engine.agent(bot)!, custom: engine.customActions.list() }
+  const before = { overview: engine.overview(), detail: engine.detail(id)!, bot: engine.agent(bot)! }
   egdb.stop()
   await new Promise((r) => setTimeout(r, 300))
 
   // A new server on the same file, and a new engine.
   const again = await open(file)
   const engine2 = new Engine({ store: again.store, now, dataDir: dir })
-  const after = { overview: engine2.overview(), detail: engine2.detail(id)!, bot: engine2.agent(bot)!, custom: engine2.customActions.list() }
-  assert.deepEqual(after.custom, before.custom)
+  const after = { overview: engine2.overview(), detail: engine2.detail(id)!, bot: engine2.agent(bot)! }
   const listed = (o: typeof before.overview) => o.items.map((i) => [i.id, i.title, i.closed, i.assignees, i.blockers.map((b) => b.type)]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
   assert.deepEqual(listed(after.overview), listed(before.overview))
   assert.deepEqual(after.overview.bots.map((b) => [b.id, b.name, b.instructions, b.model, b.cycleMinutes, b.sessionId]),
@@ -127,8 +125,6 @@ const file = join(dir, 'round-trip.egdb')
   assert.deepEqual([engine2.info(done)!.resolvedAt, engine2.info(done)!.resolvedBy], [engine.info(done)!.resolvedAt, 'alex'])
   assert.equal(engine2.settings.mcpPort(), 1234)
   const branch = (await again.client.branches())[0].id
-  const removed = engine2.customActions.list()[0].id
-  engine2.customActions.remove(removed)
   await again.store.flush()
   // Reopened, a task is open when read back too.
   await engine2.reopen(done, 'alex')
@@ -151,7 +147,6 @@ const file = join(dir, 'round-trip.egdb')
   const fourth = await loadStore(again.client, blocking)
   assert.deepEqual(fourth.store.pinnedIn(note.id), [], 'unpinned, both stay unpinned')
   assert.equal(fourth.store.items.get(note.id)!.parent_id, id)
-  assert.equal(third.store.customActions.size, 0, 'a removed custom action is archived in egdb, and not read back')
   assert.equal(third.store.items.get(done)!.resolved, false, 'a reopened task reads back open')
   // A move is a link removed and another added: read back, the item sits where it went (made when and by whom it was).
   const notes = fourth.store

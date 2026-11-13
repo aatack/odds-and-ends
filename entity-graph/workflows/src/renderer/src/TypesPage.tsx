@@ -1,110 +1,43 @@
 import { Star } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import type { Catalog, CustomAction, ItemKind } from '../../shared/types'
-import { actionIcon } from './actionIcons'
+import { useEffect, useState } from 'react'
+import type { Catalog, ItemInfo, ItemKind } from '../../shared/types'
 import { Markdown } from './components/ui/Markdown'
 import { itemActions } from './itemActions'
-import { Form } from './forms'
 import { Params } from './Params'
 import { TypeIcon, TYPE_NAME } from './icons'
+import { ScriptCard } from './ScriptCard'
 import { api } from './useWorkflows'
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
-type Draft = Omit<CustomAction, 'id'> & { id?: string }
-
-/** How a custom action is edited: through the one form, like everything else. */
-const ACTION_FORM = {
-  type: 'object',
-  properties: {
-    name: { type: 'string', title: 'Name' },
-    description: { type: 'string', title: 'Description', 'x-multiline': true, description: 'What it does: shown on hover, and what its code is written from.' },
-    notes: { type: 'string', title: 'Notes', 'x-multiline': true, description: 'More for the model writing its code: how, edge cases, which actions to use. Only shown here.' },
-    icon: { type: 'string', title: 'Icon', 'x-editor': 'action-icon' },
-    important: { type: 'boolean', title: 'Important', description: 'A button in the header, rather than in the menu beside the buttons.' },
-    source: {
-      type: 'string',
-      title: 'Code',
-      'x-multiline': true,
-      'x-monospace': true,
-      description: 'async (context, actions) => null | "said in the chat" | { message?, items? }. Generate writes it from the description and notes.',
-    },
-  },
-  required: ['name'],
-}
 
 /**
- * Every item type, with what can be done to its items: the app's own actions
- * (read only: which are buttons, which are in the menu), then the human's own,
- * to add, change, generate the code of, or remove.
+ * Every item type, with what can be done to its items: the app's own actions (read only: which are buttons, which are
+ * in the menu), then the scripts the type owns (`set_owner` to its name), each a card that opens it. Every item of the
+ * type offers those scripts in its right pane. New script makes one owned by the type, and opens it; bots write them
+ * just as well (see the script type's description).
  */
-/** `mobile`: one column, full width. */
-export function TypesPage({ catalog, custom, act, mobile = false }: { catalog: Catalog; custom: CustomAction[]; act: Act; mobile?: boolean }) {
-  const [draft, setDraft] = useState<Draft | null>(null)
-  const [generating, setGenerating] = useState(false)
+export function TypesPage({ catalog, act, onOpen, version, mobile = false }: { catalog: Catalog; act: Act; onOpen: (id: string) => void; version: unknown; mobile?: boolean }) {
   /** The type whose fields are open, if any. */
   const [fields, setFields] = useState<string | null>(null)
-
-  // Every change is saved as it is made, a moment after the typing stops. Saves
-  // go one at a time, so a new action is inserted once and then updated by the id
-  // it was given. `opened` counts the drafts opened, and `ids` holds the id each
-  // new one got, so a save that lands after another was opened goes to its own.
-  const latest = useRef<Draft | null>(null)
-  const opened = useRef(0)
-  const ids = useRef(new Map<number, string>())
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const saving = useRef<Promise<unknown>>(Promise.resolve())
-  const save = () => {
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = null
-    const which = opened.current
-    const snapshot = latest.current
-    saving.current = saving.current.then(() => {
-      if (!snapshot?.name.trim()) return
-      const d = { ...snapshot, id: snapshot.id ?? ids.current.get(which) }
-      return act(async () => {
-        const { id } = await api().saveCustomAction(d)
-        if (d.id) return
-        ids.current.set(which, id)
-        if (which !== opened.current) return
-        latest.current = latest.current && { ...latest.current, id }
-        setDraft((now) => now && { ...now, id })
-      })
-    })
-    return saving.current
-  }
-  const edit = (d: Draft) => {
-    latest.current = d
-    setDraft(d)
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = setTimeout(() => void save(), 400)
-  }
-  /** Opens another action (or none), saving what was being edited first. */
-  const open = (d: Draft | null) => {
-    if (timer.current) void save()
-    opened.current++
-    latest.current = d
-    setDraft(d)
-  }
-  useEffect(() => () => void (timer.current && save()), [])
-
-  const generate = () =>
-    draft &&
+  const [scripts, setScripts] = useState<Record<string, ItemInfo[]>>({})
+  // Read again whenever anything changes (a bot may have given a type a script).
+  useEffect(() => {
+    let live = true
+    void Promise.all(catalog.types.map(async (t) => [t.type, await api().typeScripts(t.type)] as const)).then((all) => live && setScripts(Object.fromEntries(all)))
+    return () => {
+      live = false
+    }
+  }, [catalog, version])
+  const newScript = (type: string) =>
     act(async () => {
-      setGenerating(true)
-      try {
-        const which = opened.current
-        const source = await api().generateCustomAction(draft)
-        if (which === opened.current && latest.current) edit({ ...latest.current, source })
-      } finally {
-        setGenerating(false)
-      }
+      const [id] = await api().addItems(null, [{ type: 'script', params: { name: `New ${type} script`, source: 'return null' } }])
+      await api().setOwner(id, type)
+      onOpen(id)
     })
   return (
     <div className={`page types-page ${mobile ? 'mobile' : ''}`}>
       {catalog.types.map((t) => {
         const builtIn = itemActions({ id: '', type: t.type, closed: false, summary: '' }, { act: async () => {} })
-        const mine = custom.filter((c) => c.type === t.type)
-        const editing = draft?.type === t.type
         return (
           <section key={t.type} className="card">
             <h2 className="row-inline">
@@ -130,53 +63,18 @@ export function TypesPage({ catalog, custom, act, mobile = false }: { catalog: C
                   {a.important && <Star className="icon important" aria-label="Important" />}
                 </div>
               ))}
-              {mine.map((c) => {
-                const Icon = actionIcon(c.icon)
-                return (
-                  <button key={c.id} className={`type-action ${draft?.id === c.id ? 'editing' : ''}`} title={c.description} onClick={() => open(c)}>
-                    <Icon className="icon" />
-                    <span>{c.name}</span>
-                    {c.important && <Star className="icon important" aria-label="Important" />}
-                  </button>
-                )
-              })}
-              {!editing && (
-                <button
-                  className="type-action add"
-                  onClick={() => open({ type: t.type, name: '', description: '', notes: '', source: '', icon: 'zap', important: false })}
-                >
-                  + New
-                </button>
-              )}
+              <button className="type-action add" onClick={() => void newScript(t.type)}>
+                + New script
+              </button>
             </div>
-            {editing && draft && (
-              <div className="type-editor">
-                <Form schema={ACTION_FORM} value={draft} setValue={(v) => edit({ ...draft, ...(v as Draft) })} />
-                <div className="buttons">
-                  <button data-ui disabled={generating || !(draft.description.trim() || draft.notes.trim())} onClick={() => void generate()}>
-                    {generating ? 'Generating…' : draft.source.trim() ? 'Regenerate code' : 'Generate code'}
-                  </button>
-                  {draft.id && (
-                    <button
-                      data-ui
-                      onClick={() =>
-                        act(async () => {
-                          if (timer.current) clearTimeout(timer.current)
-                          timer.current = null
-                          await saving.current
-                          await api().removeCustomAction(latest.current?.id ?? draft.id!)
-                          open(null)
-                        })
-                      }
-                    >
-                      Delete
-                    </button>
-                  )}
-                  <button data-ui onClick={() => open(null)}>
-                    Done
-                  </button>
-                  {!draft.name.trim() && <span className="muted">Saved once it has a name.</span>}
-                </div>
+            {(scripts[t.type] ?? []).length > 0 && (
+              <div className="type-scripts">
+                {scripts[t.type].map((s) => (
+                  // Pressed, a script here opens (there is no item to run it on); every item of the type runs it from its right pane.
+                  <div key={s.id} className="type-script" onClick={(e) => !(e.target as HTMLElement).closest('button') && onOpen(s.id)}>
+                    <ScriptCard info={s} on={null} act={act} />
+                  </div>
+                ))}
               </div>
             )}
           </section>
