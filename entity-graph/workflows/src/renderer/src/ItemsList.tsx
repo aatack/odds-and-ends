@@ -10,7 +10,7 @@ import { ItemIcon, waitingOn } from './icons'
 import { FINDER_SECTIONS, SECTIONS, type Recent, type SectionId } from './sections'
 import { api } from './useWorkflows'
 import { Marked } from './components/ui/Marked'
-import { searchFocusAtom } from './views'
+import { searchFocusAtom, viewsAtom } from './views'
 
 /**
  * What a row says beside its icon: only what the icon can't. What a script
@@ -41,7 +41,8 @@ const ADDABLE: Partial<Record<SectionId, { verb: string; title: string }>> = {
 
 /**
  * The finder, one view wherever items are found: home, an item's Assignments, and every item picker (`ItemPicker`,
- * this in a modal). Its sections (`FINDER_SECTIONS`, see `SECTIONS`) are the same everywhere: what is assigned to
+ * this in a modal). Its sections (`FINDER_SECTIONS`, see `SECTIONS`) are the same everywhere: what Back goes through
+ * (History, the nearest first), what is assigned to
  * whoever it is for (`recent.who`, else you), what they own, what is pinned to them, what was assigned to them lately,
  * then, while something is typed, everything else that matches. Each shows `perSection` rows, then "n more", which
  * shows the rest; an item shows in every section that has it. Typing filters the titles fuzzily; the arrow keys
@@ -94,7 +95,24 @@ export function ItemsList(props: {
       live = false
     }
   }, [whoKey, wantsExtra, items])
-  const recent = useMemo(() => ({ ...given, ...extra }), [given, extra])
+  // History: what Back goes through (the views of items below the one on screen), the nearest first, each once; never
+  // what Forward would bring back. Read from the store, again as anything changes.
+  const views = useAtomValue(viewsAtom)
+  const historyKey = sections.includes('history')
+    ? [...new Set(views.slice(0, -1).reverse().flatMap((v) => ('id' in v && v.id ? [v.id] : [])))].join(',')
+    : ''
+  const [history, setHistory] = useState<Item[]>([])
+  useEffect(() => {
+    if (!historyKey) return setHistory([])
+    let live = true
+    void api()
+      .items(historyKey.split(','))
+      .then((got) => live && setHistory(got), () => live && setHistory([]))
+    return () => {
+      live = false
+    }
+  }, [historyKey, items])
+  const recent = useMemo(() => ({ ...given, ...extra, history }), [given, extra, history])
   // The + of a link section: which link is being made, once something is picked.
   const [adding, setAdding] = useState<SectionId | null>(null)
   const add = (id: string) => {
@@ -117,7 +135,7 @@ export function ItemsList(props: {
   // The sections, each filtered (best match first) when something is typed, and cut to `perSection` unless expanded.
   const groups = useMemo(() => {
     // What is typed is matched against every item the finder has, and those only the store gave it.
-    const known = [...items, ...[...extra.pinned, ...extra.unassigned, ...(given.history ?? [])].filter((u) => !items.some((i) => i.id === u.id))]
+    const known = [...items, ...[...extra.pinned, ...extra.unassigned, ...history].filter((u) => !items.some((i) => i.id === u.id))]
     const matched = text.trim() ? new Map(fuzzysort.go(text, known, { key: 'title', threshold: 0.2 }).map((r, i) => [r.obj.id, i])) : null
     const chosen = new Set(selected ?? [])
     const seen = new Set<string>(chosen)
@@ -150,7 +168,7 @@ export function ItemsList(props: {
       // A link section that can be added to shows even when empty, but not while something is typed.
       .filter((g) => g.count || (g.add && !matched))
     return botsLabel ? [...chosenGroup, ...itemGroups, ...botGroup] : [...chosenGroup, ...botGroup, ...itemGroups]
-  }, [items, recent, given.history, extra, sections, perSection, expanded, text, bots, botsLabel, selected, act])
+  }, [items, recent, history, extra, sections, perSection, expanded, text, bots, botsLabel, selected, act])
   const flat = groups.flatMap((g) => g.lines)
   const current = Math.min(at, Math.max(flat.length - 1, 0))
   const choose = (line: Line) => ('item' in line ? onOpen(line.item.id) : 'bot' in line ? onOpen(line.bot.id) : setExpanded([...expanded, line.more]))

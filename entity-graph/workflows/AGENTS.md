@@ -367,14 +367,11 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   `before-input-event`, so the window's menu doesn't close the window. Typing filters titles fuzzily; the arrows
   move; Enter opens; Tab makes a new item with the typed title; Escape with nothing typed goes Back. What the items view opens *replaces* it on the stack
   (`open(view, { replace: true })`), so Back goes to where you were before it rather than to the list.
-- **History** (`HistoryView`, view kind `history`, which takes no item) is what Back goes through: the stack below the
-  top, never what Forward would bring back, the nearest first, each item once (pages have no row), in the finder with
-  one section (`history` in `sections.ts`; the rows read by `api().items(ids)`). Picking one is Back as many times
-  (`backTo`: what is passed goes ahead, for Forward). For now it is reached only in a modal, by Ctrl+T (which closes
-  it again).
 - **The finder** (`ItemsList`) is one view: home, an item's Assignments, and every item picker (`ItemPicker`, the
   same list in a modal, picking rather than opening: one item, or with `multiple` toggling each) show the same
-  **sections** (`FINDER_SECTIONS` in `sections.ts`), for whoever it is for (`recent.who`, else you): **Assigned**,
+  **sections** (`FINDER_SECTIONS` in `sections.ts`), for whoever it is for (`recent.who`, else you): **History** (what Back goes through: the views of items below the one
+  on screen, the nearest first, each once, never what Forward would bring back; read from `viewsAtom`, the rows by
+  `api().items(ids)`), **Assigned**,
   **Owned**, **Pinned** (what is pinned to them), **Recently unassigned** (what was assigned to them and no longer is,
   the latest 16, from egdb's history of `assignees` links), then, while something is typed, **Everything else** that
   matches. Pinned and Recently unassigned come from the store (`Engine.finder`). An item shows in every section

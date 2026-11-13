@@ -14,8 +14,6 @@ import { ItemMenu } from './ItemMenu'
 import { ItemInfoView } from './ItemInfoView'
 import { ItemPicker } from './ItemPicker'
 import { ItemsList } from './ItemsList'
-import { HistoryView } from './HistoryView'
-import { Modal } from './components/ui/Modal'
 import { Composer } from './Composer'
 import { ItemRefContext, Markdown } from './components/ui/Markdown'
 import { ItemRef } from './ItemRef'
@@ -104,9 +102,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
   useEffect(() => api().onBack(back), [back])
   useEffect(() => api().onForward(forward), [forward])
   // Ctrl+L puts the items view on top of the stack; if it is already showing, it puts the cursor in its search line.
-  // Ctrl+D is Next. Ctrl+F finds in the view: the items view's own search line, or a find line over a chat. Ctrl+T
-  // opens the History view in a modal (or closes it).
-  const [historyOpen, setHistoryOpen] = useState(false)
+  // Ctrl+D is Next. Ctrl+F finds in the view: the items view's own search line, or a find line over a chat.
   const focusSearch = useSetAtom(searchFocusAtom)
   const setFind = useSetAtom(findAtom)
   const focusFind = useSetAtom(findFocusAtom)
@@ -128,9 +124,6 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
       } else if (key === 'd') {
         e.preventDefault()
         void next()
-      } else if (key === 't') {
-        e.preventDefault()
-        setHistoryOpen((o) => !o)
       } else if (key === 'f') {
         e.preventDefault()
         if (showingItems) focusSearch((n) => n + 1)
@@ -174,22 +167,6 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
           {mobile && <AppMenu mobile={mobile} onSignOut={onSignOut} onCloseSource={onCloseSource} />}
         </div>
         <ItemMenu actOn={items.actOn} overview={items.overview} recent={items.recent} />
-        {historyOpen && (
-          <Modal title="History" size="large" blur onClose={() => setHistoryOpen(false)}>
-            <div className="picker min-h-0 flex-1">
-              <HistoryView
-                views={items.views}
-                recent={items.recent}
-                version={items.overview}
-                onBackTo={(i) => {
-                  setHistoryOpen(false)
-                  items.backTo(i)
-                }}
-                onEscape={() => setHistoryOpen(false)}
-              />
-            </div>
-          </Modal>
-        )}
       </ItemRefContext.Provider>
       </OverviewContext.Provider>
     </ItemsContext.Provider>
@@ -419,8 +396,6 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
   if (w.view?.kind === 'integrations') return page('Integrations', <IntegrationsPage mobile={mobile} />)
   if (w.view?.kind === 'mcp') return page('MCP', <McpPage mobile={mobile} />)
   if (w.view?.kind === 'phone') return page('Phone', <PhonePage mobile={mobile} />)
-  if (w.view?.kind === 'history')
-    return page('History', <HistoryView views={w.views} recent={w.recent} version={w.overview} onBackTo={w.backTo} onEscape={w.back} mobile={mobile} />)
   // Home: how the app works, the same text the bots are given (shared/paradigm.ts), as markdown.
   if (w.view?.kind === 'home') return page('Home', <Markdown className="home-doc" text={PARADIGM} />)
   // Home (nothing on the stack, or the items view) is the person signed in, shown as any item is: `selected` is them.
