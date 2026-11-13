@@ -111,6 +111,16 @@ assert.deepEqual(inThread.map((m) => m.text), ['Thanks!', '*np*'])
 const ranged = (await engine.callAction('slack_messages', { after: '1700000140', before: '1700000170' }, ctx)) as { author: string }[]
 assert.deepEqual(ranged.map((m) => m.author), ['Alex', 'Sam'])
 assert.deepEqual(((await engine.callAction('slack_channels', { query: '#eng' }, ctx)) as { id: string }[]).map((c) => c.id), ['C9'])
+// What is new after a message: its thread's replies, and what came after it in the channel, marked mine or not.
+type New = { replies: { text: string; from_me: boolean }[]; after: { text: string }[]; others: number; newest: string }
+const got = (await engine.callAction('slack_replies', { link }, ctx)) as New
+assert.deepEqual(got.replies.map((m) => [m.text, m.from_me]), [['Thanks!', true], ['*np*', false]])
+assert.deepEqual(got.after.map((m) => m.text), ['Lunch?'])
+assert.equal(got.others, 1)
+const later = (await engine.callAction('slack_replies', { link, since: got.newest }, ctx)) as New
+assert.deepEqual([later.replies.length, later.after.length], [0, 0], 'nothing newer than newest')
+const fromReply = (await engine.callAction('slack_replies', { channel: 'C9', ts: '1700000150.000300', thread_ts: '1700000100.000200' }, ctx)) as New
+assert.deepEqual([fromReply.replies.map((m) => m.text), fromReply.after], [['*np*'], []], 'a reply looks in its thread only')
 
 // A "Slack wait" script, as one would be made in the app: given a topic with a message ("[id]() <link>"), it keeps the
 // topic until something new appears after that message, then says what and hands it back. Its state is on the topic.

@@ -427,6 +427,53 @@ export const slackActions: Action[] = [
     },
   },
   {
+    name: 'slack_replies',
+    unsafe: false,
+    description:
+      'What is new after a message: replies in its thread, and (for a message not in a thread) what was said after it in its ' +
+      'channel, each newer than `since` (left out: the message itself). `from_me` marks the operator\'s own; `others` counts the ' +
+      "rest. For waiting on a reply: keep `newest` and pass it as `since` next time. Reads Slack afresh, not the cache.",
+    input: {
+      workspace,
+      link: z.string().optional().describe("The message's link."),
+      channel: z.string().optional(),
+      ts: z.string().optional(),
+      thread_ts: z.string().optional(),
+      since: z.string().optional().describe('Only what is newer than this: a ts, or an ISO time.'),
+    },
+    run: async (a, { engine }) => {
+      const at = await locate(engine, a)
+      const since = a.since ? toTs(String(a.since)) : at.ts
+      const root = at.thread_ts ?? at.ts
+      // Not cached: an answer up to five minutes old would hide a reply that just came.
+      const thread: Raw[] = []
+      let cursor: string | undefined
+      do {
+        const r = await slackCall(engine, at.w.id, 'conversations.replies', { channel: at.channel, ts: root, limit: 200, cursor })
+        thread.push(...(r.messages as Raw[]))
+        cursor = (r.response_metadata as { next_cursor?: string } | undefined)?.next_cursor || undefined
+      } while (cursor && thread.length < 1000)
+      const inThread = !!at.thread_ts && at.thread_ts !== at.ts
+      const channel = inThread
+        ? []
+        : ((await slackCall(engine, at.w.id, 'conversations.history', { channel: at.channel, oldest: since, limit: 200 })).messages as Raw[]).reverse()
+      const newer = (xs: Raw[]) => xs.filter((m) => Number(m.ts) > Number(since))
+      const mine = (m: { user?: string }) => m.user === at.w.userId
+      const replies = (await render(engine, at.w, at.channel, newer(thread))).map((m) => ({ ...m, from_me: mine(m) }))
+      const after = (await render(engine, at.w, at.channel, newer(channel).filter((m) => !m.thread_ts || m.thread_ts === m.ts))).map((m) => ({ ...m, from_me: mine(m) }))
+      const all = [...replies, ...after]
+      return {
+        channel: at.channel,
+        channel_name: await channelName(engine, at.w, at.channel),
+        since,
+        newest: all.reduce((n, m) => (Number(m.ts) > Number(n) ? m.ts : n), since),
+        others: all.filter((m) => !m.from_me).length,
+        replies,
+        after,
+      }
+    },
+  },
+  {
     name: 'slack_search',
     unsafe: false,
     description: "Search messages with Slack's search syntax, e.g. \"from:@sam in:#eng deploy\". Needs the search:read scope.",
