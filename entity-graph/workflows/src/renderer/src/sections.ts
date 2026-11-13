@@ -1,5 +1,5 @@
 import { createContext } from 'react'
-import { DEFAULT_SECTIONS, type SearchSection } from '../../shared/search'
+import { DEFAULT_SECTIONS, finderSections, type SearchSection } from '../../shared/search'
 import type { Item, Overview } from '../../shared/types'
 import { withBot } from './icons'
 
@@ -13,7 +13,7 @@ import { withBot } from './icons'
  * servers, and folders. Those are not items, so they wait on the finder picking
  * things other than items.
  */
-export type SectionId = 'assigned' | 'owned' | 'viewed' | 'needsYou' | 'withBots' | 'waiting' | 'closed'
+export type SectionId = 'assigned' | 'owned' | 'unassigned' | 'viewed' | 'needsYou' | 'withBots' | 'waiting' | 'closed' | 'everything'
 
 export interface Section {
   /** Its heading, which may depend on whose search page it is. */
@@ -26,7 +26,15 @@ export interface Section {
  * What the finder reads as recent: what was viewed here (kept by the app, not the store), and who there is. `who` is
  * whose search page it is (the Tasks view's picker: people, bots, any of them): the person signed in, unless it says.
  */
-export type Recent = { me: string; viewed: string[]; users: Overview['users']; bots: { id: string }[]; who?: string[] }
+export type Recent = {
+  me: string
+  viewed: string[]
+  users: Overview['users']
+  bots: { id: string }[]
+  who?: string[]
+  /** What was assigned to whoever it is for and no longer is, the latest first (`unassigned`, read by the finder). */
+  unassigned?: Item[]
+}
 
 /** Whose search page it is: `who`, or the person signed in. */
 const whose = (r: Recent): string[] => (r.who?.length ? r.who : [r.me])
@@ -48,19 +56,25 @@ export const SECTIONS: Record<SectionId, Section> = {
     label: (r) => (yours(r) ? 'You own' : 'Owned'),
     items: (items, r) => items.filter((i) => open(i) && !!i.owner && whose(r).includes(i.owner) && !i.assignees.some((a) => whose(r).includes(a)) && i.open !== null),
   },
+  unassigned: {
+    label: (r) => (yours(r) ? 'Recently unassigned from you' : 'Recently unassigned'),
+    items: (_items, r) => r.unassigned ?? [],
+  },
   viewed: { label: 'Recently viewed', items: (items, r) => byIds(r.viewed, items) },
   needsYou: { label: 'Needs you', items: (items) => items.filter((i) => open(i) && i.withYou) },
   withBots: { label: 'With bots', items: (items, r) => items.filter((i) => open(i) && !i.withYou && withBot(i, r.bots)) },
   waiting: { label: 'Waiting', items: (items, r) => items.filter((i) => open(i) && !i.withYou && !withBot(i, r.bots)) },
   closed: { label: 'Closed today', items: (items) => items.filter((i) => i.closed) },
+  // Only while something is typed (the finder skips it otherwise): whatever matches that no section above has.
+  everything: { label: 'Everything else', items: (items) => items },
 }
 
 
-/** The search page's sections as configured (the `search` item; the defaults until it is read): every finder's, unless it says. */
 /** A section's heading, as `recent` reads it. */
 export const sectionLabel = (id: SectionId, recent: Recent): string => {
   const l = SECTIONS[id].label
   return typeof l === 'string' ? l : l(recent)
 }
 
-export const SearchSectionsContext = createContext<SearchSection[]>(DEFAULT_SECTIONS)
+/** Every finder's sections (`finderSections` of those configured): each finder's, unless it says. */
+export const SearchSectionsContext = createContext<SearchSection[]>(finderSections(DEFAULT_SECTIONS))

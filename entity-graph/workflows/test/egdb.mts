@@ -60,6 +60,12 @@ const file = join(dir, 'round-trip.egdb')
   const hi = engine.detail(id)!.children.find((e) => e.params.text === 'Hi.')!.id
   await engine.setValue(hi, 'colour', 'red', 'alex')
   await engine.setValue(hi, 'colour', 'blue', `bot:${bot}`)
+  // Recently unassigned: what was assigned to someone and no longer is, the latest first, from egdb's history.
+  const was = (await engine.create('Was yours', { actor: 'alex' }))!
+  await engine.assign(was, 'alex', false, 'alex')
+  const still = (await engine.create('Still yours', { actor: 'alex' }))!
+  assert.ok((await engine.unassigned(['alex'])).some((i) => i.id === was))
+  assert.ok(!(await engine.unassigned(['alex'])).some((i) => i.id === still), 'not what is still assigned')
   engine.customActions.save({ type: 'topic', name: 'Hello', description: 'd', notes: 'n', source: 'async () => "hi"', icon: 'zap', important: true })
   engine.settings.set('mcp.port', 1234)
   const done = (await engine.create('Done'))!

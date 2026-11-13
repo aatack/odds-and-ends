@@ -20,10 +20,11 @@ export type Filter =
   | { not: Filter }
 
 /**
- * The finder's own sections, built in: what is assigned to you, what you own, what was viewed, whose turn, what bots
- * have, what waits, what closed today.
+ * The finder's own sections, built in: what is assigned to you, what you own, what was assigned to you lately and is no
+ * longer, what was viewed, whose turn, what bots have, what waits, what closed today, and (while something is typed)
+ * everything else that matches.
  */
-export const BUILTIN_SECTIONS = ['assigned', 'owned', 'viewed', 'needsYou', 'withBots', 'waiting', 'closed'] as const
+export const BUILTIN_SECTIONS = ['assigned', 'owned', 'unassigned', 'viewed', 'needsYou', 'withBots', 'waiting', 'closed', 'everything'] as const
 export type BuiltinSection = (typeof BUILTIN_SECTIONS)[number]
 
 /** One section: built in; a query (a filter over every item); or a function (JavaScript that answers rows). */
@@ -40,11 +41,28 @@ export interface SearchRow {
   right?: string
 }
 
-/** The pickers' sections when nothing is configured. */
-export const DEFAULT_SECTIONS: SearchSection[] = BUILTIN_SECTIONS.filter((id) => id !== 'assigned' && id !== 'owned').map((id) => ({ kind: 'builtin', id }))
+/** Every finder's first sections, whatever is configured: what is assigned to whoever it is for, what they own, what was assigned to them lately. */
+export const ASSIGNMENT_SECTIONS: SearchSection[] = [
+  { kind: 'builtin', id: 'assigned' },
+  { kind: 'builtin', id: 'owned' },
+  { kind: 'builtin', id: 'unassigned' },
+]
+const FIXED = new Set(['assigned', 'owned', 'unassigned', 'everything'])
+/** The built-in sections that can be configured: the rest are in every finder already. */
+export const CONFIGURABLE_SECTIONS = BUILTIN_SECTIONS.filter((id) => !FIXED.has(id))
 
-/** The search (Ctrl+L): what is assigned to you, then what you own. */
-export const SEARCH_SECTIONS: SearchSection[] = [{ kind: 'builtin', id: 'assigned' }, { kind: 'builtin', id: 'owned' }]
+/** The sections configured after those when nothing is. */
+export const DEFAULT_SECTIONS: SearchSection[] = CONFIGURABLE_SECTIONS.map((id) => ({ kind: 'builtin', id }))
+
+/**
+ * The one list every finder shows (home, an item's Assignments, every picker): the assignment sections, then those
+ * configured (the `search` item), then everything else that matches what is typed.
+ */
+export const finderSections = (configured: SearchSection[]): SearchSection[] => [
+  ...ASSIGNMENT_SECTIONS,
+  ...configured.filter((s) => s.kind !== 'builtin' || !FIXED.has(s.id)),
+  { kind: 'builtin', id: 'everything' },
+]
 
 /** Whether a value-set (an item's values, and the keys made from its links) passes a filter. */
 export function matches(values: Record<string, unknown>, f: Filter): boolean {

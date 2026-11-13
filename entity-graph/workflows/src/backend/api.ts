@@ -45,6 +45,7 @@ export function handlers(engine: Engine, admin: Admin, me: string, source = ''):
     newNotes: (title, pinTo) => engine.newNotes(title, pinTo, me),
     subtree: (itemId) => engine.subtree(itemId),
     viewText: (itemId, size) => engine.view(itemId, size),
+    unassigned: (who) => engine.unassigned(who, 16, me),
     setOwner: (itemId, owner) => engine.setOwner(itemId, owner, me),
     editLog: (query) => engine.store.log(query),
     rename: (id, title) => engine.rename(id, title, me),

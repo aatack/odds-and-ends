@@ -70,8 +70,23 @@ export function ItemsList(props: {
   mobile?: boolean
 }) {
   const configured = useContext(SearchSectionsContext)
-  const { items, recent, sections = configured, perSection = 12, onOpen, onTab, verb = 'Open', bots = [], botsLabel, selected, onEscape, mobile = false } = props
+  const { items, recent: given, sections = configured, perSection = 12, onOpen, onTab, verb = 'Open', bots = [], botsLabel, selected, onEscape, mobile = false } = props
   const [text, setText] = useState('')
+  // Recently unassigned: read from the store's history for whoever the finder is for, again as anything changes.
+  const [unassigned, setUnassigned] = useState<Item[]>([])
+  const whoKey = (given.who?.length ? given.who : [given.me]).join(',')
+  const wantsUnassigned = sections.some((s) => s.kind === 'builtin' && s.id === 'unassigned')
+  useEffect(() => {
+    if (!wantsUnassigned) return setUnassigned([])
+    let live = true
+    void api()
+      .unassigned(whoKey.split(','))
+      .then((got) => live && setUnassigned(got), () => live && setUnassigned([]))
+    return () => {
+      live = false
+    }
+  }, [whoKey, wantsUnassigned, items])
+  const recent = useMemo(() => ({ ...given, unassigned }), [given, unassigned])
   const [at, setAt] = useState(0)
   const [expanded, setExpanded] = useState<string[]>([])
   // A query's or a function's rows: asked for again a moment after the typing stops (a function is told what is typed).
@@ -107,8 +122,10 @@ export function ItemsList(props: {
 
   // The sections, each filtered (best match first) when something is typed, and cut to `perSection` unless expanded.
   const groups = useMemo(() => {
+    // What is typed is matched against every item the finder has, and those only the store's history gave it.
+    const known = [...items, ...unassigned.filter((u) => !items.some((i) => i.id === u.id))]
     const matched = text.trim()
-      ? new Map(fuzzysort.go(text, items, { key: 'title', threshold: 0.2 }).map((r, i) => [r.obj.id, i]))
+      ? new Map(fuzzysort.go(text, known, { key: 'title', threshold: 0.2 }).map((r, i) => [r.obj.id, i]))
       : null
     const chosen = new Set(selected ?? [])
     const seen = new Set<string>(chosen)
@@ -138,12 +155,11 @@ export function ItemsList(props: {
           if (shown.length < all.length) lines.push({ key: `${id}:more`, more: id, n: all.length - shown.length })
           return { id, label: s.label, count: all.length, lines }
         }
-        let all = SECTIONS[s.id].items(items, recent)
-        all = all.filter((i) => !chosen.has(i.id))
-        if (matched) {
-          all = all.filter((i) => matched.has(i.id) && !seen.has(i.id)).sort((a, b) => matched.get(a.id)! - matched.get(b.id)!)
-          all.forEach((i) => seen.add(i.id))
-        }
+        // Everything else is only for what is typed; each item shows in the first section that has it.
+        let all = s.id === 'everything' && !matched ? [] : SECTIONS[s.id].items(items, recent)
+        all = all.filter((i) => !chosen.has(i.id) && !seen.has(i.id))
+        if (matched) all = all.filter((i) => matched.has(i.id)).sort((a, b) => matched.get(a.id)! - matched.get(b.id)!)
+        all.forEach((i) => seen.add(i.id))
         const shown = expanded.includes(id) ? all : all.slice(0, perSection)
         const lines: Line[] = shown.map((item) => ({ key: `${id}:${item.id}`, item }))
         if (shown.length < all.length) lines.push({ key: `${id}:more`, more: id, n: all.length - shown.length })
@@ -151,7 +167,7 @@ export function ItemsList(props: {
       })
       .filter((g) => g.count)
     return botsLabel ? [...chosenGroup, ...itemGroups, ...botGroup] : [...chosenGroup, ...botGroup, ...itemGroups]
-  }, [items, recent, sections, rows, perSection, expanded, text, bots, botsLabel, selected])
+  }, [items, recent, unassigned, sections, rows, perSection, expanded, text, bots, botsLabel, selected])
   const flat = groups.flatMap((g) => g.lines)
   const current = Math.min(at, Math.max(flat.length - 1, 0))
   const choose = (line: Line) =>

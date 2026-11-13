@@ -16,7 +16,7 @@ import { ItemPicker } from './ItemPicker'
 import { ItemsList } from './ItemsList'
 import { SearchSectionsContext } from './sections'
 import { SearchPage } from './SearchPage'
-import { DEFAULT_SECTIONS, SEARCH_SECTIONS, type SearchSection } from '../../shared/search'
+import { DEFAULT_SECTIONS, finderSections, type SearchSection } from '../../shared/search'
 import { Composer } from './Composer'
 import { ItemRefContext } from './components/ui/Markdown'
 import { ItemRef } from './ItemRef'
@@ -157,9 +157,10 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
   // The search page's sections, as configured: read again whenever anything changes (a bot may have set them).
   const [sections, setSections] = useState<SearchSection[] | null>(null)
   useEffect(() => void api().searchSections().then(setSections), [items.overview])
+  const finder = useMemo(() => finderSections(sections ?? DEFAULT_SECTIONS), [sections])
   return (
     <ItemsContext.Provider value={items}>
-      <SearchSectionsContext.Provider value={sections ?? DEFAULT_SECTIONS}>
+      <SearchSectionsContext.Provider value={finder}>
       <ItemRefContext.Provider value={itemRef}>
         {/* On a desktop: the pages on the left, the view in the middle, the item's people, actions and pins on the right. */}
         <div className={`app ${mobile ? 'mobile' : ''}`}>
@@ -418,7 +419,6 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
           <ItemsList
             items={w.overview.items}
             recent={{ ...w.recent, who }}
-            sections={SEARCH_SECTIONS}
             onEscape={w.views.length > 0 ? w.back : undefined}
             onOpen={openFromItems}
             onTab={(title) => w.act(async () => openFromItems(await api().create(title || newTopicTitle(), null)))}
@@ -476,7 +476,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
           <DebugView id={e.id}>{mobile && pins}</DebugView>
         ) : shown === 'assignments' ? (
           // What is assigned to it, then what it owns: a person's or a bot's home, as the Home view is yours.
-          <ItemsList items={w.overview.items} recent={{ ...w.recent, who: [e.id] }} sections={SEARCH_SECTIONS} onOpen={openItem} mobile={mobile} />
+          <ItemsList items={w.overview.items} recent={{ ...w.recent, who: [e.id] }} onOpen={openItem} mobile={mobile} />
         ) : shown === 'notes' ? (
           <NotesView key={e.id} info={e} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={openItem} onBack={w.back} mobile={mobile} />
         ) : shown === 'comments' && d.item ? (

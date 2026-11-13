@@ -314,6 +314,22 @@ export class Engine extends EventEmitter {
     })
   }
 
+  /**
+   * What was assigned to any of `who` and no longer is, the latest first, at most `limit`: from egdb's history of
+   * `assignees` links (one removed is how an item left them). Empty in a store with no history (in memory).
+   */
+  async unassigned(who: string[], limit = 16, viewer = this.me()): Promise<Item[]> {
+    if (!who.length) return []
+    const log = await this.store.log({ entities: who, keys: ['assignees'], limit: 1000 })
+    const ids: string[] = []
+    for (const e of log) {
+      if (ids.length >= limit) break
+      if (e.kind !== 'link' || !e.removed || !e.other || !who.includes(e.other) || ids.includes(e.entity)) continue
+      if (this.row(e.entity) && !this.assignees(e.entity).some((a) => who.includes(a))) ids.push(e.entity)
+    }
+    return ids.flatMap((id) => this.get(id, viewer) ?? [])
+  }
+
   /** Who an item is assigned to: its `assignees` links, the earliest first. */
   assignees(itemId: string): string[] {
     return this.store.assignees(itemId)

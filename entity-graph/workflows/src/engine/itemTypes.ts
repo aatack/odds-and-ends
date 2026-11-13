@@ -133,7 +133,8 @@ export const bot: ItemType = {
 }
 
 export const SEARCH_DOC =
-  "The search page's sections: one list for the whole app (the Tasks view, and every picker: @ in the chat input, and the rest). " +
+  "The search page's sections: one list for the whole app (home, an item's Assignments, and every picker: @ in the chat input, and the rest). " +
+  'Every finder starts with what is assigned to whoever it is for, what they own, and what was assigned to them lately and is no longer; then these; then, while something is typed, everything else that matches. ' +
   'It is kept on the one `search` item, which sits in no task; search_sections reads it, set_search_sections replaces it. Each section, in order:\n' +
   "- { kind: 'builtin', id, label? }: one of the finder's own: viewed (recently viewed), needsYou, withBots, waiting, closed (today).\n" +
   "- { kind: 'query', label, filter, limit? }: a filter, as egdb's find takes it ({ eq: { key, value } }, ne, lt/le/gt/ge, contains, " +

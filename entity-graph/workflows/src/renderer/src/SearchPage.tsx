@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { BUILTIN_SECTIONS, DEFAULT_SECTIONS, type SearchSection } from '../../shared/search'
+import { BUILTIN_SECTIONS, CONFIGURABLE_SECTIONS, DEFAULT_SECTIONS, type SearchSection } from '../../shared/search'
 import { fenced, Markdown } from './components/ui/Markdown'
 import { sectionLabel } from './sections'
 import { api } from './useWorkflows'
@@ -98,7 +98,7 @@ export function SearchPage() {
             </select>
             {d.kind === 'builtin' ? (
               <select value={d.id} onChange={(e) => set(i, { id: e.target.value as (typeof BUILTIN_SECTIONS)[number] })}>
-                {BUILTIN_SECTIONS.map((id) => (
+                {CONFIGURABLE_SECTIONS.map((id) => (
                   <option key={id} value={id}>
                     {sectionLabel(id, { me: '', viewed: [], users: [], bots: [] })}
                   </option>

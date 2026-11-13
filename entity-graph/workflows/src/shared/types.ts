@@ -409,6 +409,8 @@ export interface WorkflowsAPI {
   subtree: (itemId: string) => Promise<ItemInfo[]>
   /** An item as text at a size, as bots read it (`engine/views.ts`): Copy in its menu. Null if there is no such item. */
   viewText: (itemId: string, size: 'pill' | 'card' | 'focus') => Promise<string | null>
+  /** What was assigned to any of `who` and no longer is (an `assignees` link to them removed), the latest first: the finder's Recently unassigned. */
+  unassigned: (who: string[]) => Promise<Item[]>
   /** Gives an item to an owner (a username or a bot), or to nobody (null). */
   setOwner: (itemId: string, owner: string | null) => Promise<void>
   customActions: () => Promise<CustomAction[]>
@@ -539,7 +541,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'viewText', 'searchSections', 'setSearchSections', 'runSearchSection', 'setOwner', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'viewText', 'unassigned', 'searchSections', 'setSearchSections', 'runSearchSection', 'setOwner', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',

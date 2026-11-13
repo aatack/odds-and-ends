@@ -367,9 +367,14 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   `before-input-event`, so the window's menu doesn't close the window. Typing filters titles fuzzily; the arrows
   move; Enter opens; Tab makes a new item with the typed title; Escape with nothing typed goes Back. What the items view opens *replaces* it on the stack
   (`open(view, { replace: true })`), so Back goes to where you were before it rather than to the list.
-- **The finder** (`ItemsList`) is the items view and every picker: items in **sections** (`sections.ts`: assigned,
-  owned, recently viewed, needs you, with bots, waiting, closed today), each instance choosing which, in what order,
-  and how many rows each shows before an "n more" row (Enter or a click shows the rest). The Tasks view shows 12 a
+- **The finder** (`ItemsList`) is one view: home, an item's Assignments, and every item picker (`ItemPicker`, the
+  same list in a modal, picking rather than opening: one item, or with `multiple` toggling each) show the same
+  **sections** (`finderSections` in `shared/search.ts`, given by `SearchSectionsContext`): what is assigned to whoever
+  it is for (`recent.who`, else you), what they own, **Recently unassigned** (what was assigned to them and no longer
+  is, the latest 16, from egdb's history of `assignees` links: `Engine.unassigned`), then the configured ones (the
+  `search` item), then, while something is typed, **Everything else** that matches. An item shows in the first section
+  that has it. People pickers offer people and bots alone (`sections={[]}`). Each section shows a number of rows
+  before an "n more" row (Enter or a click shows the rest). The Tasks view shows 12 a
   section; pickers in a modal, 6. Recently viewed is kept by the app, in local storage (`viewedAtom`). A
   row's grey text says only what its icon can't (what a script waits for); "needs you" and "waits for a bot" are
   the icon's job.
