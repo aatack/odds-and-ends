@@ -6,48 +6,51 @@ import type { ItemType } from './integrations'
 import { slackChannelParams, slackMessageParams } from './slack'
 
 
-export const task: ItemType = {
-  type: 'task',
-  description:
-    'A task: a thing to be done. Its items sit in it, other tasks included; a task in another blocks nothing and is not closed with it. ' +
-    'Add one to split work off: give it its first items (e.g. a note) in `items`, and who has it in `assignees`. With no ' +
-    "assignees, it is its maker's if a person made it, and nobody's otherwise.",
+/** What a topic's first items (and an older build's task's `items`) look like. */
+const firstItems = z.array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() }))
+
+export const TOPIC_DOC =
+  'A topic: what is said, a thing to be done, or a note in a tree; one type for all of them. `text` is what it says (its first line is ' +
+  'its name). `open` is its status: true while open (a thing to be done, or a checkbox), false once closed, left out for none (a comment). ' +
+  'It holds two lists: its comments (its chat: what is said in it, in order) and its notes (a tree of topics); `display` says which its ' +
+  'view shows. What you add in a topic goes in its comments. Pinned items show beside it. Its owner (whoever made it, if a person; else the ' +
+  "owner of the topic it is in) is who it goes back to. To split work off, add an open topic (`open: true`) with its first comments in " +
+  '`comments` and who has it in `assignees`. The old types `task` (title, items) and `note` (text) are taken as topics.'
+
+export const topic: ItemType = {
+  type: 'topic',
+  description: TOPIC_DOC,
   params: {
-    title: z.string(),
-    items: z
-      .array(z.object({ type: z.string(), params: z.record(z.unknown()), ref: z.string().optional() }))
-      .optional()
-      .describe('Items to put in it as it is created (`items`, the old name, is taken too). They are added in it, and not kept in its values.'),
+    text: z.string().describe('What it says; its first line is its name.'),
+    open: z.boolean().optional().describe('Its status: true while open, false once closed; left out, none.'),
+    section: z.boolean().optional().describe('A heading, in a tree of notes.'),
+    display: z.enum(['comments', 'notes']).optional().describe('What its view shows: its comments (a chat; the default) or its notes (a tree).'),
+    comments: firstItems.optional().describe('Comments to put in it as it is made. Not kept in its values.'),
+    notes: firstItems.optional().describe('Notes to put in it as it is made. Not kept in its values.'),
     key: z.string().optional().describe('Identifies it, so that it is added only once.'),
-    detached: z
-      .boolean()
-      .optional()
-      .describe('Put it in no task, rather than the one it is added in: for work unrelated to this task.'),
+    detached: z.boolean().optional().describe('Put it in no topic, rather than the one it is added in: for work unrelated to it.'),
     assignees: z
       .array(z.string())
       .optional()
       .describe('Who has it from the start: people by username, bots by name or id. Not kept in its values: they are links.'),
   },
-  data: '{ how: "closed" | "cancelled" }',
-  blocking: true,
-  bots: true,
-  describe: (p) => String(p.title),
-  said: (p, d) => `${p.title}: ${d.how === 'cancelled' ? 'cancelled' : 'closed'}`,
-}
-
-export const note: ItemType = {
-  type: 'note',
-  description:
-    'Something written in an item (or in a bot\'s own chat): by a person, a bot, or a script. Notes in a note are its notes: its view is them as a tree.',
-  params: {
-    text: z.string(),
-    section: z.boolean().optional().describe('A heading, in a tree of notes.'),
-    open: z.boolean().optional().describe('A checkbox, in a tree of notes: true while open, false once ticked.'),
-  },
-  data: '{}',
+  data: '—',
   blocking: false,
   bots: true,
-  describe: (p) => String(p.text),
+  describe: (p) => String(p.text ?? ''),
+}
+
+/**
+ * An older build's types, as what is added today: a task is an open topic (its title its text, its items its comments),
+ * a note a topic. Answers the spec as it is, for any other type.
+ */
+export function asTopic(s: { type: string; params: Record<string, unknown> }): { type: string; params: Record<string, unknown> } {
+  if (s.type === 'task') {
+    const { title, items, events, ...rest } = s.params ?? {}
+    return { type: 'topic', params: { text: rest.text ?? title, open: rest.open ?? true, ...rest, ...((items ?? events) ? { comments: items ?? events } : {}) } }
+  }
+  if (s.type === 'note') return { type: 'topic', params: s.params ?? {} }
+  return s
 }
 
 export const approval: ItemType = {
@@ -81,11 +84,11 @@ export const SCRIPT_DOC =
   'note: "[id]() 2d"); one script serves every topic it is given. Use one for repetitive work that needs no LLM: a snooze, ' +
   'watching a PR or a thread, a weekly chore. It costs nothing to run.\n' +
   '- Make it on its own: add_items with no item_id.\n' +
-  '- It wakes as a bot does: when something happens to it (a topic is assigned to it, a note in its own chat), debounce_minutes ' +
-  '(1) after; and every cycle_minutes (15) while it holds topics. A run handles everything it holds.\n' +
+  '- It runs as a bot does: every minute the app gives it the first topic assigned to it (the longest held first) that it has not run ' +
+  'on in the last cycle_minutes (30), or that was assigned to it again since. A run handles that one topic.\n' +
   '- Keep state on the topics it works on (set_value: any key, any value), and read it back with get_item (values).\n' +
   '- `source` is the body of an async function: `context` and `tools` are in scope; it may await and return. context is the ' +
-  'script (id, name, its values, state, runs) with topics: [{ id, title }] (what it holds), now (ISO time) and trigger. ' +
+  'script (id, name, its values, state, runs) with topics: [{ id, title }] (the topic it is run on), now (ISO time) and trigger. ' +
   'tools.<name>(args) calls any MCP tool; unsafe ones only when a person presses its play button. mentions(topicId, who = itself) ' +
   'answers the notes in a topic that mention it, newest first, each with text (what follows the mention); refs(itemId, type?) ' +
   'answers the items in an item, of one type if given.\n' +
@@ -99,8 +102,7 @@ export const script: ItemType = {
     name: z.string().optional().describe('What it is called: assign to it or @ it by this.'),
     source: z.string().describe('The body of an async function, with context and tools in scope.'),
     description: z.string().optional().describe('What it does, in a line.'),
-    debounce_minutes: z.number().min(0).optional().describe('How long after something happens to it it runs: 1 if left out.'),
-    cycle_minutes: z.number().min(0).optional().describe('How often it runs while it holds topics: 15 if left out; 0, never.'),
+    cycle_minutes: z.number().min(0).optional().describe('How long before it runs on a topic again that it still holds: 30 if left out.'),
   },
   data: 'none: it runs till a person cancels it (older scripts may have { result, runs, logs } or { error }, from when they could end)',
   blocking: true,
@@ -113,15 +115,14 @@ export const bot: ItemType = {
   type: 'bot',
   description:
     'A bot: a name, instructions, and how it runs. It sits in no item, and is open while it lasts (cancelling it deletes it). ' +
-    'Items are assigned to it (the assign action). It wakes when anything affects it (a task is assigned to it, something new in ' +
-    'its tasks or its own chat, its settings change), its debounce after; and every cycle_minutes (15) while it has tasks.',
+    'Items are assigned to it (the assign action). Every minute, it is run on the first item assigned to it (the longest held first) ' +
+    'that it has not run on in the last cycle_minutes (30), or that was assigned to it again since: one item a run.',
   params: {
     name: z.string().min(1).describe('What it is called: people @ it by this name.'),
     instructions: z.string().optional().describe('What it is for and how it works: given with every run.'),
     provider: z.string().optional().describe("Who runs it: 'claude' (the default)."),
     model: z.string().optional().describe('The model, as the provider names it (opus, sonnet, haiku or a full id): opus if left out.'),
-    debounce_minutes: z.number().min(0).optional().describe('How long to wait after the last thing that happened before it wakes: 1 if left out.'),
-    cycle_minutes: z.number().min(0).optional().describe('How often it wakes while it has tasks, news or not: 15 if left out; 0, never.'),
+    cycle_minutes: z.number().min(0).optional().describe('How long before it runs on an item again that it still holds: 30 if left out.'),
     folder: z.string().optional().describe('Its working folder; its own, under the app\'s, if left out.'),
     session_id: z.string().optional().describe("Its Claude session, set by the app once it first runs. Don't set it."),
   },
@@ -170,20 +171,6 @@ export const user: ItemType = {
   describe: (p) => String(p.name || p.username),
 }
 
-export const WIDGET_DOC =
-  'A widget: a small piece of UI with state of its own, shown in the chat (and larger in its view). Use one when a person should see or ' +
-  'fill in structured data: a checklist, a form, a table to edit, a dashboard.\n' +
-  '- `html` is an HTML fragment (with <script> and <style> in it), run in a sandbox with no way out: no network, no app. It is styled as ' +
-  'the app is (its fonts and colours as CSS variables: --ink, --muted, --panel, --bg, --line, --accent), so plain HTML (button, input, ' +
-  'table, select) looks native.\n' +
-  '- In its scripts: `onState(fn)` calls fn with the state now and whenever it changes (from anywhere); `setState(next)` or ' +
-  '`setState(current => next)` changes it (kept on the item: other items, bots and scripts read it as `widget_state`); `getState()`; ' +
-  'and helpers that answer HTML strings: `esc(text)`, `pill(text)`, `card(title, bodyHtml)`.\n' +
-  '- Update the page in place in onState (set .textContent, .value, .checked) rather than rewriting innerHTML round an input, so a ' +
-  'person typing keeps their place.\n' +
-  '- `widget_state` is its first state (any JSON). set_value (key widget_state) changes it from outside, and an open widget hears of it at once.\n' +
-  'Example: html: \'<button id="b">Add one</button> <span id="n"></span><script>onState(s => n.textContent = s.count); ' +
-  'b.onclick = () => setState(s => ({ ...s, count: s.count + 1 }))</script>\', widget_state: { count: 0 }'
 
 export const link: ItemType = {
   type: 'link',
@@ -197,30 +184,7 @@ export const link: ItemType = {
   describe: (p) => String(p.title || p.url),
 }
 
-export const widget: ItemType = {
-  type: 'widget',
-  description: WIDGET_DOC,
-  params: {
-    title: z.string().optional().describe('What it is, in a line.'),
-    html: z.string().describe('The HTML fragment, scripts and styles included: see the description.'),
-    widget_state: z.unknown().optional().describe('Its state: any JSON. Its first, as it is added.'),
-  },
-  data: '—',
-  blocking: false,
-  bots: true,
-  describe: (p) => String(p.title ?? 'Widget'),
-}
 
-/** Retired for now: kept so the process items already stored still read. None can be added (Engine.prepare). */
-export const proc: ItemType = {
-  type: 'process',
-  description: 'Switched off for now: no process can be added.',
-  params: { command: z.string(), cwd: z.string().optional(), description: z.string().optional() },
-  data: '—',
-  blocking: true,
-  bots: false,
-  describe: (p) => String(p.description || `\`${p.command}\``),
-}
 
 /** When, to the minute, from a Slack ts or any time slack.ts reads. */
 const at = (when: unknown) => {
@@ -272,4 +236,4 @@ export const file: ItemType = {
   describe: (p) => String(p.title || p.name || p.path || 'File'),
 }
 
-export const ITEM_TYPES: ItemType[] = [task, note, approval, script, proc, link, widget, file, search, slackMessage, slackChannel, bot, user]
+export const ITEM_TYPES: ItemType[] = [topic, approval, script, link, file, search, slackMessage, slackChannel, bot, user]

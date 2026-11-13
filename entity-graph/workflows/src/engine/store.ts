@@ -8,10 +8,13 @@
 //     `text`); a blocker, `resolved` (false, then true), and once resolved
 //     `cancelled` (if so) and `data`; a script, the `state` it hands on. When
 //     it resolved, and by whom, is egdb's history of `resolved`;
-//   - a `contains` link to it from the item it sits in (or from `@root`),
-//     sorted by its place there; who wrote that link, and when, is who made the
-//     item, and when (egdb keeps both with every write);
-//   - an `assigned_to` link from a task to each person or bot who has it.
+//   - a `comments` or `notes` link to it from the topic it sits in (none for an
+//     item in no item), sorted by its place there; who set its `type`, and when,
+//     is who made the item, and when (egdb keeps both with every write);
+//   - an `assignees` link from an item to each person, bot or script who has it,
+//     and an `owns` link to it from its owner, each sorted by when it was made.
+// An older build's `contains` and `assigned_to` links are read once, as the
+// loader turns them into these (egdb.ts).
 // Every write says who made it (its author) and when, and egdb keeps every value
 // and link an entity ever had: that is the history. There is no trace or run
 // table of the app's own.
@@ -26,9 +29,14 @@
 import type { Op, Value } from 'egdb-client'
 import type { LogEntry, LogQuery } from '../shared/types'
 
+/** The links a topic holds what is in it by: its chat, and its tree. */
+export type Via = 'comments' | 'notes'
+
 export interface ItemRow {
   id: string
   parent_id: string | null
+  /** The link it sits in its parent by; null for an item in none. */
+  via: Via | null
   seq: number
   type: string
   params: Record<string, unknown>
@@ -108,7 +116,7 @@ export const STATE_KEYS = new Set(['type', 'resolved', 'resolved_at', 'resolved_
 const v = (x: unknown): Value => (x === undefined ? null : (x as Value))
 const set = (entity: string, key: string, value: unknown): Op => ({ set: { entity, key, value: v(value) } })
 
-/** One `assigned_to` link, as memory holds it. */
+/** One `assignees` (or `owns`) link, as memory holds it. */
 export interface Assigned {
   at: number
   by: string
@@ -127,8 +135,13 @@ export interface Pin {
   id: string
   at: number
   by: string
-  /** The link that pins it: `pins`, or (written by an older build) a later `contains`. */
-  via: 'pins' | 'contains'
+}
+
+/** Who owns an item: an `owns` link to it. */
+export interface Owned {
+  owner: string
+  at: number
+  by: string
 }
 
 export class Store {
@@ -138,17 +151,16 @@ export class Store {
   private byType = new Map<string, Set<string>>()
   readonly settings = new Map<string, unknown>()
   readonly customActions = new Map<string, CustomActionRow>()
-  /** `assigned_to` links: each task's assignees, with when (and at which moment) and by whom; and each assignee's tasks. */
+  /** `assignees` links: each item's assignees, with when (and at which moment) and by whom; and each assignee's items. */
   private assigneesOf = new Map<string, Map<string, Assigned>>()
   private itemsOf = new Map<string, Set<string>>()
-  /**
-   * Pins: `pins` links from an item to what is pinned to it (artefacts it needs: subtasks, PRs, files), each with when
-   * and by whom, the first pinned first. A `contains` link added later than the one an item was made with (an older
-   * build's `link_items`) reads as a pin too: `via` says which link it is, to remove the right one.
-   */
+  /** Pins: `pins` links from an item to what is pinned to it (artefacts it needs: subtasks, PRs, files), each with when and by whom, the first pinned first. */
   private pinsOf = new Map<string, Pin[]>()
   /** The other way: the items each item is pinned to. */
   private pinnedTo = new Map<string, string[]>()
+  /** `owns` links: each item's owner; and what each owner owns. */
+  private ownerOf = new Map<string, Owned>()
+  private ownedBy = new Map<string, Set<string>>()
   /** Writes held back while a `batch` runs, so that they land together. */
   private held: Held[] | null = null
   /** The last moment handed out. */
@@ -204,7 +216,7 @@ export class Store {
     this.byType.set(row.type, typed)
   }
 
-  /** Adds an item: its type and params as values, and the `contains` link to it, as its maker wrote them. */
+  /** Adds an item: its type and params as values, and the link to it from where it sits (if anywhere), as its maker wrote them. */
   insertItem(row: ItemRow): void {
     row.added_n = this.moment()
     if (row.resolved) row.resolved_n = row.added_n
@@ -213,32 +225,29 @@ export class Store {
     for (const [k, value] of Object.entries(row.params)) if (value !== undefined && value !== null) ops.push(set(row.id, k, value))
     // A blocker says it is open; a plain item says nothing, being resolved as it is made.
     if (!row.resolved) ops.push(set(row.id, 'resolved', false))
-    ops.push({ link: { source: row.parent_id ?? ROOT, destination: row.id, link_type: 'contains', sort: { explicit: row.seq } } })
+    if (row.parent_id) ops.push({ link: { source: row.parent_id, destination: row.id, link_type: row.via ?? 'comments', sort: { explicit: row.seq } } })
     this.out(ops, row.created_by, row.created_at)
   }
 
   /**
-   * Moves an item into another (null: into none), at its end: the `contains` link it sits by is removed (egdb keeps
-   * that it was) and one from where it goes is added. Read back, that link is when and by whom the item was made, so
-   * both change here too, as they will after a restart. An item an older build linked elsewhere with a later
-   * `contains` (read as a pin) can't be moved: that link would be where it sits once its first is gone.
+   * Moves an item into another (null: into none), at its end, by `via` (its comments or its notes): the link it sits by
+   * is removed (egdb keeps that it was) and one from where it goes is added. Who made it, and when, stay.
    */
-  move(id: string, to: string | null, by: string, at: number): void {
+  move(id: string, to: string | null, via: Via, by: string, at: number): void {
     const row = this.items.get(id)
     if (!row) throw new Error(`No item ${id}.`)
-    if (row.parent_id === to) return
+    if (row.parent_id === to && (to === null || row.via === via)) return
     if (to && !this.items.has(to)) throw new Error(`No item ${to}.`)
     for (let p: string | null = to; p; p = this.items.get(p)?.parent_id ?? null) if (p === id) throw new Error("An item can't go inside itself.")
-    if (this.pinnedIn(id).some((from) => this.pins(from).some((p) => p.id === id && p.via === 'contains')))
-      throw new Error('An older build linked this item into another as well, so it can only stay where it is.')
     const from = row.parent_id
+    const fromVia = row.via
     this.kids.set(from, this.children(from).filter((r) => r.id !== id))
-    Object.assign(row, { parent_id: to, seq: this.nextSeq(to), created_at: at, created_by: by })
+    Object.assign(row, { parent_id: to, via: to ? via : null, seq: this.nextSeq(to) })
     this.kids.set(to, [...this.children(to), row])
     this.out(
       [
-        { link: { source: from ?? ROOT, destination: id, link_type: 'contains', sort: 'removed' } },
-        { link: { source: to ?? ROOT, destination: id, link_type: 'contains', sort: { explicit: row.seq } } },
+        ...(from ? [{ link: { source: from, destination: id, link_type: fromVia ?? 'comments', sort: 'removed' as const } }] : []),
+        ...(to ? [{ link: { source: to, destination: id, link_type: via, sort: { explicit: row.seq } } }] : []),
       ],
       by,
       at,
@@ -275,6 +284,20 @@ export class Store {
     this.out([set(id, 'resolved', false), set(id, 'resolved_at', null), ...(wasCancelled ? [set(id, 'cancelled', null)] : []), set(id, 'data', null)], by, at)
   }
 
+  /**
+   * A topic's status: open (true), closed (false) or none (null), as its `open` value. Closed, it reads as resolved:
+   * when, and by whom, are kept (egdb keeps them too, as the event for `open`).
+   */
+  setOpen(id: string, open: boolean | null, by: string, at: number): void {
+    const row = this.items.get(id)
+    if (!row) throw new Error(`No item ${id}.`)
+    const { open: _o, ...rest } = row.params
+    row.params = open === null ? rest : { ...rest, open }
+    const closed = open === false
+    if (closed !== row.resolved) Object.assign(row, { resolved: closed, resolved_at: closed ? at : null, resolved_by: closed ? by : null, resolved_n: closed ? this.moment() : 0 })
+    this.out([set(id, 'open', open)], by, at)
+  }
+
   /** Keeps what a script hands on to its next run. */
   setState(id: string, state: unknown, at: number): void {
     const row = this.items.get(id)
@@ -300,7 +323,7 @@ export class Store {
   pin(from: string, id: string, by: string, at: number): void {
     if (!this.items.has(id)) throw new Error(`No item ${id}.`)
     if (id === from || this.pins(from).some((p) => p.id === id)) return
-    this.indexPin(from, { id, at, by, via: 'pins' })
+    this.indexPin(from, { id, at, by })
     this.out([{ link: { source: from, destination: id, link_type: 'pins', sort: { explicit: at } } }], by, at)
   }
 
@@ -310,7 +333,7 @@ export class Store {
     if (!had) return
     this.pinsOf.set(from, this.pins(from).filter((p) => p.id !== id))
     this.pinnedTo.set(id, (this.pinnedTo.get(id) ?? []).filter((f) => f !== from))
-    this.out([{ link: { source: from, destination: id, link_type: had.via, sort: 'removed' } }], by, at)
+    this.out([{ link: { source: from, destination: id, link_type: 'pins', sort: 'removed' } }], by, at)
   }
 
   /** What is pinned to an item, the first pinned first. */
@@ -323,9 +346,10 @@ export class Store {
     return this.pinnedTo.get(id) ?? []
   }
 
-  /** The items in an item (or, for null, those in none), by seq. */
-  children(parentId: string | null): ItemRow[] {
-    return this.kids.get(parentId) ?? []
+  /** The items in an item (or, for null, those in none), by seq: all of them, or only those it holds by `via`. */
+  children(parentId: string | null, via?: Via): ItemRow[] {
+    const all = this.kids.get(parentId) ?? []
+    return via ? all.filter((r) => (r.via ?? 'comments') === via) : all
   }
 
   ofType(type: string): ItemRow[] {
@@ -348,12 +372,12 @@ export class Store {
     return this.assigneesOf.get(itemId)?.get(to) ?? null
   }
 
-  /** Every `assigned_to` link there is, as memory holds it. */
+  /** Every `assignees` link there is, as memory holds it. */
   allAssignments(): { item: string; to: string; given: Assigned }[] {
     return [...this.assigneesOf].flatMap(([item, m]) => [...m].map(([to, given]) => ({ item, to, given })))
   }
 
-  /** The tasks assigned to someone: their `assigned_to` links, followed backwards. */
+  /** The items assigned to someone: their `assignees` links, followed backwards. */
   assignedTo(assignee: string): string[] {
     return [...(this.itemsOf.get(assignee) ?? [])]
   }
@@ -372,10 +396,45 @@ export class Store {
     this.itemsOf.set(to, theirs)
   }
 
-  /** Assigns a task (an `assigned_to` link from it, sorted by when), or takes it off someone (the link removed). */
+  /** Assigns an item (an `assignees` link from it, sorted by when), or takes it off someone (the link removed). */
   setAssigned(itemId: string, to: string, on: boolean, by: string, at: number): void {
     this.link(itemId, to, on ? { at, by, n: this.moment() } : null)
-    this.out([{ link: { source: itemId, destination: to, link_type: 'assigned_to', sort: on ? { explicit: at } : 'removed' } }], by, at)
+    this.out([{ link: { source: itemId, destination: to, link_type: 'assignees', sort: on ? { explicit: at } : 'removed' } }], by, at)
+  }
+
+  // ---- ownership ----
+
+  /** Who owns an item (its `owns` link), or null. */
+  owner(itemId: string): Owned | null {
+    return this.ownerOf.get(itemId) ?? null
+  }
+
+  /** What someone owns: their `owns` links. */
+  owned(owner: string): string[] {
+    return [...(this.ownedBy.get(owner) ?? [])]
+  }
+
+  private indexOwner(itemId: string, o: Owned | null): void {
+    const had = this.ownerOf.get(itemId)
+    if (had) this.ownedBy.get(had.owner)?.delete(itemId)
+    if (!o) return void this.ownerOf.delete(itemId)
+    this.ownerOf.set(itemId, o)
+    this.ownedBy.set(o.owner, (this.ownedBy.get(o.owner) ?? new Set()).add(itemId))
+  }
+
+  /** Gives an item to an owner (an `owns` link to it, sorted by when), taking it from whoever owned it; null: nobody. */
+  setOwner(itemId: string, owner: string | null, by: string, at: number): void {
+    const had = this.owner(itemId)
+    if ((had?.owner ?? null) === owner) return
+    this.indexOwner(itemId, owner ? { owner, at, by } : null)
+    this.out(
+      [
+        ...(had ? [{ link: { source: had.owner, destination: itemId, link_type: 'owns', sort: 'removed' as const } }] : []),
+        ...(owner ? [{ link: { source: owner, destination: itemId, link_type: 'owns', sort: { explicit: at } } }] : []),
+      ],
+      by,
+      at,
+    )
   }
 
   // ---- settings and custom actions ----
@@ -410,15 +469,18 @@ export class Store {
     const values: Record<string, unknown> = { type: row.type, ...row.params }
     // A blocker is one that was not resolved as it was added.
     if (!row.resolved || row.resolved_n !== row.added_n) Object.assign(values, { resolved: row.resolved }, row.cancelled ? { cancelled: true } : {}, row.resolved ? { data: row.data } : {})
+    const owner = this.owner(id)
     const links: LinkView[] = [
-      { type: 'contains', direction: 'inbound', other: row.parent_id ?? ROOT, sort: row.seq, at: row.created_at, by: row.created_by },
-      ...this.children(id).map((k) => ({ type: 'contains', direction: 'outbound' as const, other: k.id, sort: k.seq, at: k.created_at, by: k.created_by })),
-      ...this.pins(id).map((p) => ({ type: p.via, direction: 'outbound' as const, other: p.id, sort: p.at, at: p.at, by: p.by })),
+      ...(row.parent_id ? [{ type: row.via ?? 'comments', direction: 'inbound' as const, other: row.parent_id, sort: row.seq, at: row.created_at, by: row.created_by }] : []),
+      ...this.children(id).map((k) => ({ type: k.via ?? 'comments', direction: 'outbound' as const, other: k.id, sort: k.seq, at: k.created_at, by: k.created_by })),
+      ...this.pins(id).map((p) => ({ type: 'pins', direction: 'outbound' as const, other: p.id, sort: p.at, at: p.at, by: p.by })),
       ...this.pinnedIn(id).map((from) => {
         const p = this.pins(from).find((q) => q.id === id)!
-        return { type: p.via, direction: 'inbound' as const, other: from, sort: p.at, at: p.at, by: p.by }
+        return { type: 'pins', direction: 'inbound' as const, other: from, sort: p.at, at: p.at, by: p.by }
       }),
-      ...this.assignees(id).map((to) => ({ type: 'assigned_to', direction: 'outbound' as const, other: to, sort: null, at: this.assignment(id, to)!.at, by: this.assignment(id, to)!.by })),
+      ...this.assignees(id).map((to) => ({ type: 'assignees', direction: 'outbound' as const, other: to, sort: null, at: this.assignment(id, to)!.at, by: this.assignment(id, to)!.by })),
+      ...(owner ? [{ type: 'owns', direction: 'inbound' as const, other: owner.owner, sort: owner.at, at: owner.at, by: owner.by }] : []),
+      ...this.owned(id).map((o) => ({ type: 'owns', direction: 'outbound' as const, other: o, sort: null, at: this.owner(o)!.at, by: this.owner(o)!.by })),
     ]
     return { id, values, set: {}, links, createdAt: row.created_at, createdBy: row.created_by }
   }
@@ -436,9 +498,11 @@ export class Store {
     settings: [string, unknown][]
     customActions: CustomActionRow[]
     assigned?: { item: string; to: string; at: number; by: string }[]
-    pinned?: { from: string; id: string; at: number; by: string; via: Pin['via'] }[]
+    pinned?: { from: string; id: string; at: number; by: string }[]
+    owners?: { item: string; owner: string; at: number; by: string }[]
   }): void {
-    for (const p of [...(saved.pinned ?? [])].sort((a, b) => a.at - b.at)) if (!this.pins(p.from).some((q) => q.id === p.id)) this.indexPin(p.from, p)
+    for (const p of [...(saved.pinned ?? [])].sort((a, b) => a.at - b.at)) if (!this.pins(p.from).some((q) => q.id === p.id)) this.indexPin(p.from, { id: p.id, at: p.at, by: p.by })
+    for (const o of [...(saved.owners ?? [])].sort((a, b) => a.at - b.at)) this.indexOwner(o.item, { owner: o.owner, at: o.at, by: o.by })
     for (const a of saved.assigned ?? []) this.link(a.item, a.to, { at: a.at, by: a.by, n: 0 })
     for (const r of [...saved.items].sort((a, b) => a.seq - b.seq)) this.index(r)
     for (const [k, value] of saved.settings) this.settings.set(k, value)
@@ -454,33 +518,50 @@ const str = (x: unknown): string | null => (typeof x === 'string' ? x : null)
 const obj = <T>(x: unknown): T | null => (x && typeof x === 'object' && !Array.isArray(x) ? (x as T) : null)
 
 /**
- * An item from its values and the `contains` link to it (where it sits, its
- * place, and who made it when). A plain item (`blocking` false) is resolved as
- * it was made; a blocker is resolved once its `resolved` is true.
+ * An older build's `task` and `note` as the topic they are now, read and never rewritten (so the older build still reads
+ * them): a task's `title` is its `text`, and it is open till its `resolved` turned true (unless an `open` was set since);
+ * a note keeps its checkbox (`open`) and shows its notes. Anything else is as it was.
+ */
+export function legacyValues(x: Values): Values {
+  if (x.type === 'task') {
+    const { title, resolved, cancelled: _c, data: _d, ...rest } = x
+    return { ...rest, type: 'topic', text: rest.text ?? title, open: typeof rest.open === 'boolean' ? rest.open : !(resolved === true || num(rest.resolved_at) !== null) }
+  }
+  if (x.type === 'note') return { ...x, type: 'topic', display: x.display ?? 'notes' }
+  return x
+}
+
+/**
+ * An item from its values (as `legacyValues` reads them), where it sits (its parent, the link it sits by and its place),
+ * and who made it when. A plain item (`blocking` false) is resolved as it was made; a blocker is resolved once its
+ * `resolved` is true; a topic is resolved (closed) while its `open` is false.
  */
 export function itemFromValues(
   id: string,
   x: Values,
-  made: { parent: string | null; seq: number; at: number; by: string },
+  made: { parent: string | null; via: Via | null; seq: number; at: number; by: string },
   blocking: boolean,
-  /** The item that set `resolved` true: when it resolved, and by whom. */
+  /** The write that resolved (or closed) it: when, and by whom. */
   resolvedBy?: { at: number; by: string },
 ): ItemRow {
   const params = Object.fromEntries(Object.entries(x).filter(([k]) => !STATE_KEYS.has(k)))
-  const resolved = x.resolved === true || num(x.resolved_at) !== null
+  const topic = x.type === 'topic'
+  const resolved = topic ? x.open === false : x.resolved === true || num(x.resolved_at) !== null
+  const held = topic ? resolved : blocking
   return {
     id,
     parent_id: made.parent,
+    via: made.parent ? made.via : null,
     seq: made.seq,
     type: String(x.type),
     params,
     created_by: made.by,
     created_at: made.at,
-    resolved: !blocking || resolved,
-    resolved_at: blocking ? (resolvedBy?.at ?? num(x.resolved_at)) : made.at,
-    resolved_by: blocking ? (resolvedBy?.by ?? str(x.resolved_by)) : made.by,
-    cancelled: x.cancelled === true,
-    data: obj(x.data),
+    resolved: topic ? resolved : !blocking || resolved,
+    resolved_at: held ? (resolvedBy?.at ?? num(x.resolved_at)) : topic ? null : made.at,
+    resolved_by: held ? (resolvedBy?.by ?? str(x.resolved_by)) : topic ? null : made.by,
+    cancelled: !topic && x.cancelled === true,
+    data: topic ? null : obj(x.data),
     memo: x.state ?? null,
     reactions: Array.isArray(x.reactions) ? x.reactions.filter((r): r is string => typeof r === 'string') : [],
     // Waits are checked at once after a restart.

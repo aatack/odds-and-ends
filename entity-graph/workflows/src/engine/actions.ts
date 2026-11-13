@@ -88,7 +88,7 @@ export const itemActions: Action[] = [
   {
     name: 'paradigm',
     unsafe: false,
-    description: 'How tasks, items and blockers work, in a few lines: read it first.',
+    description: 'How topics, items and blockers work, in a few lines: read it first.',
     input: {},
     run: async () => PARADIGM,
   },
@@ -122,7 +122,7 @@ export const itemActions: Action[] = [
     name: 'list_items',
     unsafe: false,
     description:
-      'Every open item, at any depth, and those closed in the last day: who has it, whether it is their turn, and what blocks it.',
+      'Every open topic (and anything else someone has), and the topics closed in the last day: who has it and who owns it, whether it is their turn, and what blocks it.',
     input: {},
     run: async (_a, { engine }) => {
       return engine.overview().items.map((i) => ({
@@ -131,6 +131,7 @@ export const itemActions: Action[] = [
         parentId: i.parentId,
         closed: i.closed,
         assignees: i.assignees,
+        owner: i.owner,
         withYou: i.withYou,
         blockers: i.blockers.map((b) => ({ id: b.id, type: b.type, summary: b.summary })),
       }))
@@ -185,13 +186,25 @@ export const itemActions: Action[] = [
     name: 'assign',
     unsafe: false,
     description:
-      'Assign an item to a person (by username) or a bot (by name or id), or take it off them (on: false): an `assigned_to` link from ' +
-      'the item. Assigning a bot wakes it (its debounce after), even one that has the item already. Your updates can also say who ' +
-      'has an item, with `assign`.',
+      'Assign an item to a person (by username) or a bot or script (by name or id), or take it off them (on: false): an `assignees` link ' +
+      'from the item. Anything open can be assigned. Assigning a bot makes it due on the item at once, even one that has it already. ' +
+      'Your updates can also say who has an item, with `assign`.',
     input: { item_id: itemId, to: z.string().describe("A person's username, or a bot's name or id."), on: z.boolean().optional() },
     run: async (a, ctx) => {
       await ctx.engine.assign(String(a.item_id), String(a.to), a.on !== false, ctx.actor, ctx.runId)
       return { assignees: ctx.engine.assignees(String(a.item_id)) }
+    },
+  },
+  {
+    name: 'set_owner',
+    unsafe: false,
+    description:
+      'Give an item (a topic, a bot, a script) to an owner: a person (by username) or a bot (by name or id), or to nobody (owner: null). ' +
+      'Its owner is who it goes back to when a bot lets go of it, and it is listed under what they own. An `owns` link to it.',
+    input: { item_id: itemId, owner: z.string().nullable() },
+    run: async (a, ctx) => {
+      await ctx.engine.setOwner(String(a.item_id), a.owner === null ? null : String(a.owner), ctx.actor)
+      return { owner: ctx.engine.owner(String(a.item_id)) }
     },
   },
   {
@@ -214,7 +227,7 @@ export const itemActions: Action[] = [
         instructions: b.instructions,
         provider: b.provider,
         model: b.model || 'default',
-        debounceMinutes: b.debounceMinutes,
+        cycleMinutes: b.cycleMinutes,
         running: b.runId !== null,
         assigned: b.assigned,
       })),
@@ -236,19 +249,19 @@ export const itemActions: Action[] = [
     name: 'run_custom_action',
     unsafe: false,
     description: 'Run one of the custom actions on an item of its type: what it says is added in the item, as an action item.',
-    input: { action_id: z.string().describe('From custom_actions.'), item_id: z.string().describe('The item (a task, or one in it) to run it on.') },
+    input: { action_id: z.string().describe('From custom_actions.'), item_id: z.string().describe('The item (a topic, or one in it) to run it on.') },
     run: async (a, ctx) => ctx.engine.customActions.run(String(a.action_id), String(a.item_id), ctx.actor, ctx.runId),
   },
   {
     name: 'get_item',
     unsafe: false,
     description:
-      'An item in full: its values (what set_value set on it, and its params), and for a topic (or a bot, or a script) its children: ' +
-      'every item in it, with its data, linked ones included. For anything else (a note, say), `focus`: the whole of it as text, ' +
-      'as its view shows it (a note as an indented tree with ids, notes in notes being its notes), cut off at 100 lines with the ' +
-      'ids to ask for the rest. And what is pinned to it (`pins`) and where it is pinned (`pinnedIn`), each with its id. ' +
+      'An item in full: its values (what set_value set on it, and its params), who owns it and who has it, and for a topic (or a bot, ' +
+      'or a script) its comments (`children`: every item in its chat, with its data). For a topic that shows its notes, or anything ' +
+      'else, `focus`: the whole of it as text, as its view shows it (a topic\'s notes as an indented tree with ids), cut off at 100 ' +
+      'lines with the ids to ask for the rest. And what is pinned to it (`pins`) and where it is pinned (`pinnedIn`), each with its id. ' +
       'With `size`, only the item as text at that size: `pill` (its type, name and id, as `[id]()` shows it), `card` (as a chat ' +
-      'shows it) or `focus` (the whole of it: a task as the cards of what is in it, the latest 100).',
+      'shows it) or `focus` (the whole of it: a chat as the cards of what is in it, the latest 100).',
     input: { item_id: itemId, size: z.enum(['pill', 'card', 'focus']).optional() },
     run: async (a, { engine }) => {
       const id = String(a.item_id)
@@ -258,8 +271,9 @@ export const itemActions: Action[] = [
       const d = engine.detail(id)
       const brief = (ids: string[]) => ids.map((i) => engine.info(i)).filter((i) => !!i).map((i) => ({ id: i!.id, type: i!.type, summary: i!.summary }))
       const pinned = { pins: brief(info.pins), pinnedIn: brief(info.pinnedIn) }
-      if (d) return { ...d, values: info.params, ...pinned }
-      return { item: null, parent: null, focus: engine.view(id, 'focus'), values: info.params, ...pinned }
+      const notes = info.type === 'topic' && engine.notes(id).length ? { focus: engine.view(id, 'focus') } : {}
+      if (d && info.params.display !== 'notes') return { ...d, values: info.params, ...pinned, ...(engine.notes(id).length ? { notes: engine.notes(id).map((n) => ({ id: n.id, type: n.type, summary: n.summary })) } : {}) }
+      return { item: d?.item ?? null, parent: d?.parent ?? null, focus: engine.view(id, 'focus'), values: info.params, ...pinned, ...notes }
     },
   },
   {
@@ -268,7 +282,7 @@ export const itemActions: Action[] = [
     description:
       'Run JavaScript now, once, in the app: `source` is the body of an async function with `context` (what you pass, plus now) and `tools` ' +
       '(every tool here, as tools.<name>(args); never the unsafe ones for an agent) in scope; it may await and return. Answers { result, logs }. ' +
-      'For code that should run again, or own a task, add a script item instead (see item_types).',
+      'For code that should run again, or hold a topic, add a script item instead (see item_types).',
     input: { source: z.string(), context: z.record(z.unknown()).optional() },
     run: async (a, ctx) => {
       const context = { ...((a.context as Record<string, unknown>) ?? {}), now: new Date(ctx.engine.now()).toISOString(), trigger: ctx.author === 'human' ? 'press' : 'agent' }
@@ -312,26 +326,27 @@ export const itemActions: Action[] = [
   {
     name: 'get_children',
     unsafe: false,
-    description: "The items in an item, oldest first. With open, only those still open: the item's blockers.",
-    input: { item_id: itemId, open: z.boolean().optional() },
-    run: async (a, { engine }) => engine.children(String(a.item_id), Boolean(a.open)),
+    description: "The items in an item's comments (its chat), oldest first; with notes, those in its notes. With open, only the open blockers: what the item waits on.",
+    input: { item_id: itemId, open: z.boolean().optional(), notes: z.boolean().optional() },
+    run: async (a, { engine }) => (a.notes ? engine.notes(String(a.item_id)) : engine.children(String(a.item_id), Boolean(a.open))),
   },
   {
     name: 'add_items',
     unsafe: false,
     description:
-      'Add items in a task (or in a bot\'s chat): notes, blockers, approvals, child tasks. With no item_id, add tasks, bots or people that sit in none.',
-    input: { item_id: itemId.optional(), items: z.array(spec) },
+      "Add items in a topic's comments (or in a bot's chat): comments (topics with just text), approvals, scripts, open topics to split work off. " +
+      'With `via: notes`, in its notes (its tree) instead. With no item_id, add topics, bots, scripts or people that sit in none.',
+    input: { item_id: itemId.optional(), items: z.array(spec), via: z.enum(['comments', 'notes']).optional() },
     run: async (a, ctx) => {
-      return { ids: await ctx.engine.addItems(a.item_id ? String(a.item_id) : null, a.items as ItemSpec[], ctx.actor, ctx.author) }
+      return { ids: await ctx.engine.addItems(a.item_id ? String(a.item_id) : null, a.items as ItemSpec[], ctx.actor, ctx.author, (a.via as 'comments' | 'notes') ?? 'comments') }
     },
   },
   {
     name: 'pin',
     unsafe: false,
     description:
-      'Pin items to an item (`pins` links): what is pinned to it shows beside it (cards on the right of a task), as useful in actioning it: ' +
-      'subtasks (pinned as they are made), pull requests, preview links, files, the task it came from. Followed backwards, they say where an item is ' +
+      'Pin items to an item (`pins` links): what is pinned to it shows beside it (cards on the right of a topic), as useful in actioning it: ' +
+      'open topics made in it (pinned as they are made), pull requests, preview links, files, the topic it came from. Followed backwards, they say where an item is ' +
       'referenced (get_item: pins and pinnedIn). With unpin, take them off. Pinning moves nothing: each item stays where it sits.',
     input: { item_id: itemId, item_ids: z.array(z.string()), unpin: z.boolean().optional() },
     run: async (a, ctx) => {
@@ -383,7 +398,7 @@ export const itemActions: Action[] = [
     unsafe: false,
     description:
       "Set one value on an item (null clears it): any key, any value (a type's params, in item_types, are only advice), e.g. a " +
-      "task's title, a widget's widget_state, or a script's state on a topic it holds. Bots are items too: this is how to change a bot's instructions, name or cycle_minutes, keeping its session and tasks. " +
+      "topic's text, open (its status) or display, or a script's state on a topic it holds. Bots are items too: this is how to change a bot's instructions, name or cycle_minutes, keeping its session and topics. " +
       'Not how it stands (type, resolved…: those have their own tools). ' +
       'Whatever shows it is told at once.',
     input: { item_id: itemId, key: z.string(), value: z.unknown() },
@@ -395,7 +410,7 @@ export const itemActions: Action[] = [
   {
     name: 'cancel_item',
     unsafe: false,
-    description: 'End a blocker without it happening (a task is closed as cancelled).',
+    description: 'End a blocker without it happening (a topic is closed; a bot deleted).',
     input: { item_id: z.string() },
     run: async (a, ctx) => {
       await ctx.engine.cancel(String(a.item_id), ctx.actor)
@@ -405,7 +420,7 @@ export const itemActions: Action[] = [
   {
     name: 'reopen_item',
     unsafe: false,
-    description: 'Open a closed task again: who has it is unchanged, and what its closing cancelled stays cancelled. A cancelled script comes back too, holding nothing.',
+    description: 'Open a closed topic again: who has it is unchanged, and what its closing cancelled stays cancelled. A cancelled script comes back too, holding nothing.',
     input: { item_id: itemId },
     run: async (a, ctx) => {
       await ctx.engine.reopen(String(a.item_id), ctx.actor)
@@ -415,7 +430,7 @@ export const itemActions: Action[] = [
   {
     name: 'close_item',
     unsafe: false,
-    description: 'Close an item: its open blockers are cancelled. Tasks in it are left open.',
+    description: 'Close a topic (its status closed): its open blockers are cancelled. Topics in it are left open.',
     input: { item_id: itemId },
     run: async (a, ctx) => {
       await ctx.engine.close(String(a.item_id), { actor: ctx.actor })

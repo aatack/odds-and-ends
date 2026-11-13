@@ -3,7 +3,6 @@ import { runScript } from './script'
 import { github } from './github'
 import { slackActions } from './slack'
 import { parseSlackLink } from '../shared/slack'
-import { dueAt } from './wakes'
 import { CustomActions } from './customActions'
 import { Files, isText } from './files'
 import { randomUUID } from 'node:crypto'
@@ -14,25 +13,23 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { Agent, ItemInfoDetail, ItemSpec, Item, ItemDetail, ItemInfo, LastRun, Overview, User } from '../shared/types'
 import { current, itemActions } from './actions'
-import { ITEM_TYPES, scriptResult } from './itemTypes'
+import { asTopic, ITEM_TYPES, scriptResult } from './itemTypes'
 import { execCli, type Action, type ActionContext, type Author, type ItemType, type Exec, type Integration } from './integrations'
 import { PRESETS, type Preset } from './presets'
 import { IDLE_MINUTES, MAX_SCRIPTS, plainSecrets, Settings, type Secrets } from './settings'
 export { IDLE_MINUTES, MAX_SCRIPTS } from './settings'
-import { STATE_KEYS, Store, type ItemRow, type Inspection } from './store'
+import { STATE_KEYS, Store, type ItemRow, type Inspection, type Via } from './store'
 import { viewText, type Size, type Who } from './views'
-import { FOCUS } from '../shared/views'
+import { focusKind } from '../shared/views'
 
 /** What the app keeps on items for itself: never set by `setValue`. */
-const OWN_KEYS = new Set(['session_id', 'seen', 'last_run', 'last_wake', 'handoff', 'key'])
+const OWN_KEYS = new Set(['session_id', 'seen', 'last_run', 'last_wake', 'last_seen', 'handoff', 'key'])
 
 const MINUTE = 60_000
 /** A bot's model, unless it says another. */
 export const DEFAULT_MODEL = 'opus'
-/** How many minutes a bot waits after the last thing that happened to it before it wakes, unless it says otherwise. */
-export const DEFAULT_DEBOUNCE = 1
-/** A bot that has tasks wakes this often, when something has happened in them since its last run. */
-export const PERIODIC_MINUTES = 15
+/** How long a bot or script waits before running on an item again that it still holds, unless it says otherwise (`cycle_minutes`). */
+export const CYCLE_MINUTES = 30
 /** Who the engine acts as when nobody is said and there is nobody yet (the tests, mostly). */
 export const NOBODY = 'human'
 
@@ -70,10 +67,12 @@ interface Run {
   agentId: string
   itemIds: string[]
   startedAt: number
-  /** The tasks whose assignees the run changed. */
+  /** The items whose assignees the run changed. */
   assigned: Set<string>
   /** Where the bot stood before it: put back if the run never really happened (a usage limit). */
   before: { mark: Mark | undefined; seen: string[] }
+  /** Its own mark on the item: what came after is news it has not seen. */
+  mark: Mark
 }
 
 /** A person added it, or the system did; a bot, or a bot's script, is a bot. */
@@ -106,8 +105,10 @@ export interface PromptItem {
   pins?: { info: ItemInfo; text: string }[]
 }
 
-/** What may sit in no task: what is its own (tasks, bots, people, scripts, the search item), and what is pinned rather than said (links, Slack, files). */
-const SIT_IN_NONE = ['task', 'note', 'bot', 'user', 'search', 'script', 'link', 'slack_message', 'slack_channel', 'file']
+/** What may sit in no topic: what is its own (topics, bots, people, scripts, the search item), and what is pinned rather than said (links, Slack, files). */
+const SIT_IN_NONE = ['topic', 'bot', 'user', 'search', 'script', 'link', 'slack_message', 'slack_channel', 'file']
+/** What has an owner (an `owns` link): who it goes back to. */
+const OWNED = ['topic', 'bot', 'script']
 
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'bot'
 
@@ -147,11 +148,9 @@ export class Engine extends EventEmitter {
   onCancel: (agentId: string) => void = () => {}
   /** The run each bot has going, by the bot's id. In memory only: a crash leaves nothing behind. */
   private running = new Map<string, Run>()
-  /** Where each bot was last prompted from: what came after is new to it. */
-  private marks = new Map<string, Mark>()
-  /** When each bot's settings last changed, which wakes it. */
-  private configured = new Map<string, Mark>()
-  /** When each bot was woken by hand: it runs then, whatever its debounce says. */
+  /** When each bot and script last ran on each item it holds (by bot, then item): what came after is new to it. */
+  private marks = new Map<string, Map<string, Mark>>()
+  /** When each bot was woken by hand: it runs then, on its first item, whatever it last saw. */
   private woken = new Map<string, number>()
   /** The items being checked right now: a check never starts while the last is still going. */
   private checking = new Set<string>()
@@ -169,15 +168,17 @@ export class Engine extends EventEmitter {
     this.dataDir = opts.dataDir ?? join(tmpdir(), 'workflows')
     this.files = new Files(join(this.dataDir, 'files'))
     this.customActions = new CustomActions(this, this.store)
-    for (const r of this.store.ofType('bot')) {
+    for (const r of [...this.store.ofType('bot'), ...this.store.ofType('script')]) {
+      const seen = r.params.last_seen && typeof r.params.last_seen === 'object' ? (r.params.last_seen as Record<string, number>) : {}
+      this.marks.set(r.id, new Map(Object.entries(seen).map(([item, at]) => [item, { n: 0, at: Number(at) }])))
+      if (r.type !== 'bot') continue
       const last = r.params.last_run as LastRun | undefined
-      this.marks.set(r.id, last ? { n: 0, at: last.startedAt } : { n: r.added_n, at: r.created_at })
       // A run the app was stopped during is over; what it was on goes back to its owner, saying so.
       if (last && last.endedAt === null && !r.resolved) {
         this.store.setParams(r.id, { ...r.params, last_run: { ...last, endedAt: this.now(), error: 'The app stopped during the run.' } }, `bot:${r.id}`, this.now())
         for (const itemId of last.items)
-          if (this.get(itemId) && !this.get(itemId)!.closed && this.assignees(itemId).includes(r.id)) {
-            this.add(itemId, [{ type: 'note', params: { text: `@${this.agentName(r.id)} was stopped (the app stopped) before it finished.` } }], 'system')
+          if (this.row(itemId) && !this.isClosed(itemId) && this.assignees(itemId).includes(r.id)) {
+            this.add(itemId, [{ type: 'topic', params: { text: `@${this.agentName(r.id)} was stopped (the app stopped) before it finished.` } }], 'system')
             this.handBack(itemId, r.id, null)
           }
       }
@@ -218,10 +219,12 @@ export class Engine extends EventEmitter {
     const type = this.type(r.type)
     const params = r.params
     const data = r.data
-    const summary = type.type === 'task' || type.type === 'bot' ? this.title(r.id, params) : type.describe(params)
+    const summary = type.type === 'bot' ? this.title(r.id, params) : type.describe(params)
     return {
       id: r.id,
       parentId: r.parent_id,
+      via: r.parent_id ? (r.via ?? 'comments') : null,
+      owner: this.owner(r.id),
       type: type.type,
       params,
       createdBy: r.created_by,
@@ -233,7 +236,7 @@ export class Engine extends EventEmitter {
       data,
       actor: (type.blocking ? r.resolved_by : null) ?? r.created_by,
       summary,
-      message: !r.resolved ? null : r.cancelled ? `Cancelled: ${summary}` : type.said ? type.said(params, data ?? {}) : summary,
+      message: r.type === 'topic' ? summary : !r.resolved ? null : r.cancelled ? `Cancelled: ${summary}` : type.said ? type.said(params, data ?? {}) : summary,
       nextCheckAt: r.next_check_at,
       runs: r.runs,
       lastError: r.last_error,
@@ -252,46 +255,89 @@ export class Engine extends EventEmitter {
     return r ? this.toInfo(r) : null
   }
 
-  /** The items in an item, oldest first; only the open ones (its blockers) with `open`. */
+  /** The comments in an item (its chat), oldest first; only the open blockers among them with `open`. */
   children(itemId: string, open = false): ItemInfo[] {
     return this.store
-      .children(itemId)
-      .filter((r) => !open || !r.resolved)
+      .children(itemId, 'comments')
+      .filter((r) => !open || (!r.resolved && this.blocking(r.type)))
       .map((r) => this.toInfo(r))
   }
 
-  /** A task's title (a bot's: its @name). */
-  private title(id: string, params: Record<string, unknown>): string {
-    const type = this.row(id)?.type
-    if (type === 'bot') return `@${this.agentName(id)}`
-    if (type === 'script') return String(params.name ?? params.description ?? 'Script')
-    return String(params.title)
+  /** The notes in an item (its tree's first level), oldest first. */
+  notes(itemId: string): ItemInfo[] {
+    return this.store.children(itemId, 'notes').map((r) => this.toInfo(r))
   }
 
-  /** Who a task is assigned to: its `assigned_to` links, the earliest first. */
+  /** An item's name: a topic's first line, a bot's @name, a script's name; anything else as its type describes it. */
+  private title(id: string, params: Record<string, unknown>): string {
+    const r = this.row(id)
+    if (r?.type === 'bot') return `@${this.agentName(id)}`
+    if (r?.type === 'script') return String(params.name ?? params.description ?? 'Script')
+    if (r?.type === 'topic') return String(params.text ?? '').split('\n')[0]
+    return r ? this.type(r.type).describe(params).split('\n')[0] : id
+  }
+
+  /** Whether an item is closed: a topic whose status is closed, or a blocker that resolved (a bot deleted, a script cancelled). */
+  isClosed(id: string): boolean {
+    const r = this.row(id)
+    return !r || (r.type === 'topic' ? r.params.open === false : this.blocking(r.type) && r.resolved)
+  }
+
+  /** Who owns an item (its `owns` link), or null. */
+  owner(itemId: string): string | null {
+    return this.store.owner(itemId)?.owner ?? null
+  }
+
+  /** Who a new item is owned by: the person who made it; else the owner of what it is in; else the owner of the bot that made it. */
+  private ownerFor(createdBy: string, parentId: string | null): string | null {
+    if (this.isUser(createdBy)) return createdBy
+    if (parentId && this.owner(parentId)) return this.owner(parentId)
+    const bot = /^bot:(.+)$/.exec(createdBy)?.[1]
+    return bot ? this.owner(bot) : null
+  }
+
+  /** Gives an item to an owner (a person or a bot), or to nobody (null). */
+  async setOwner(itemId: string, owner: string | null, actor = this.me()): Promise<void> {
+    if (!this.row(itemId)) throw new Error(`No item ${itemId}.`)
+    const to = owner === null ? null : this.resolveAssignee(owner)
+    this.store.setOwner(itemId, to, actor, this.now())
+    this.emit('change')
+  }
+
+  /** What someone owns that is still open: open topics, and bots and scripts that last. */
+  ownedBy(owner: string): string[] {
+    return this.store.owned(owner).filter((id) => {
+      const r = this.row(id)
+      return r && !this.isClosed(id) && (r.type !== 'topic' || r.params.open === true)
+    })
+  }
+
+  /** Who an item is assigned to: its `assignees` links, the earliest first. */
   assignees(itemId: string): string[] {
     return this.store.assignees(itemId)
   }
 
   private toItem(r: ItemRow, viewer = this.me()): Item {
     const id = r.id
-    const kids = this.store.children(id)
-    // Neither a script nor a task sits in another as a dependency: a task waits on something by being assigned to it.
-    const blockers = kids.filter((k) => !k.resolved && k.type !== 'script' && k.type !== 'task').map((k) => this.toInfo(k))
+    const kids = this.store.children(id, 'comments')
+    // Neither a script nor a topic sits in another as a dependency: a topic waits on something by being assigned to it.
+    const blockers = kids.filter((k) => !k.resolved && k.type !== 'script' && this.blocking(k.type)).map((k) => this.toInfo(k))
     const assignees = this.assignees(id)
     const touched = Math.max(
       r.created_at,
       ...kids.map((k) => Math.max(k.created_at, k.resolved_at ?? 0)),
       ...assignees.map((a) => this.store.assignment(id, a)!.at),
     )
-    const closed = r.resolved
+    const closed = this.isClosed(id)
     const bot = [...this.running.values()].find((run) => run.itemIds.includes(id))?.agentId ?? null
     return {
       id,
+      type: r.type as Item['type'],
       title: this.title(id, r.params),
       parentId: r.parent_id,
+      open: r.type === 'topic' ? (typeof r.params.open === 'boolean' ? r.params.open : null) : !closed,
       closed,
-      how: (r.data?.how as string) ?? null,
+      owner: this.owner(id),
       blockers,
       assignees,
       withYou: !closed && assignees.includes(viewer) && blockers.every((b) => this.waitsOnHuman(b)),
@@ -307,24 +353,31 @@ export class Engine extends EventEmitter {
     return Boolean(this.type(b.type).human)
   }
 
-  /** The task with this id, or null; `withYou` for `viewer`. */
+  /** The item with this id as the lists read it (a topic, or anything else someone may have), or null; `withYou` for `viewer`. */
   get(id: string, viewer = this.me()): Item | null {
     const r = this.row(id)
-    return r?.type === 'task' ? this.toItem(r, viewer) : null
+    return r ? this.toItem(r, viewer) : null
   }
 
   private must(id: string, viewer = this.me()): Item {
     const item = this.get(id, viewer)
-    if (!item) throw new Error(`No task ${id}.`)
+    if (!item) throw new Error(`No item ${id}.`)
     return item
   }
 
-  /** Every open task, at any depth, and those closed in the last day; the bots and the people: as `viewer` sees them. */
+  /**
+   * What the lists show, as `viewer` sees them: every topic with a status that is open, or closed in the last day, and
+   * anything else someone has; the bots and the people.
+   */
   overview(viewer = this.me()): Overview {
     const since = this.now() - 24 * 60 * MINUTE
-    const items = this.store
-      .ofType('task')
-      .filter((r) => !r.resolved || (r.resolved_at ?? 0) > since)
+    const held = new Set(this.store.allAssignments().map((a) => a.item))
+    const items = [...this.store.items.values()]
+      .filter((r) =>
+        r.type === 'topic'
+          ? r.params.open === true || (r.params.open === false && (r.resolved_at ?? 0) > since) || (held.has(r.id) && r.params.open !== false)
+          : held.has(r.id) && !this.isClosed(r.id),
+      )
       .map((r) => this.toItem(r, viewer))
       // The most recently touched first: what is moving stays on top.
       .sort((a, b) => b.since - a.since)
@@ -344,10 +397,10 @@ export class Engine extends EventEmitter {
     return [...new Set(given.map((a) => a.to))]
   }
 
-  /** A task in full; or a bot, its own chat being its items. */
+  /** A topic in full, its comments being its chat; or a bot or script, its own chat being its comments. */
   detail(id: string, viewer = this.me()): ItemDetail | null {
     const r = this.row(id)
-    const item = r?.type === 'task' || r?.type === 'bot' ? this.toItem(r, viewer) : null
+    const item = r?.type === 'topic' || r?.type === 'bot' || r?.type === 'script' ? this.toItem(r, viewer) : null
     if (!item) return null
     const parent = item.parentId ? this.get(item.parentId) : null
     return { item, parent: parent && { id: parent.id, title: parent.title }, children: this.children(id) }
@@ -364,7 +417,7 @@ export class Engine extends EventEmitter {
       parent: parent && { id: parent.id, title: parent.title },
       pins: infos(info.pins),
       pinnedIn: infos(info.pinnedIn),
-      item: info.type === 'task' || info.type === 'bot' ? this.detail(id, viewer) : null,
+      item: this.detail(id, viewer),
     }
   }
 
@@ -387,11 +440,13 @@ export class Engine extends EventEmitter {
     return open.sort((a, b) => last(a.id) - last(b.id) || b.since - a.since)[0]?.id ?? null
   }
 
-  /** Renames a task: its `title` value changes (egdb keeps the old one, and who changed it). */
+  /** Renames a topic: the first line of its `text` changes (egdb keeps the old one, and who changed it). */
   async rename(itemId: string, title: string, actor = this.me()): Promise<void> {
     const t = title.trim()
+    if (this.row(itemId)?.type !== 'topic') throw new Error(`No topic ${itemId}.`)
     if (!t || this.must(itemId).title === t) return
-    this.store.setParams(itemId, { ...this.row(itemId)!.params, title: t }, actor, this.now())
+    const rest = String(this.row(itemId)!.params.text ?? '').split('\n').slice(1)
+    this.store.setParams(itemId, { ...this.row(itemId)!.params, text: [t, ...rest].join('\n') }, actor, this.now())
     this.emit('change')
   }
 
@@ -404,12 +459,12 @@ export class Engine extends EventEmitter {
     try {
       out = await this.callAction(name, args, { engine: this, author: this.isUser(actor) ? 'human' : 'bot', actor, itemId, runId: null })
     } catch (e) {
-      this.add(itemId, [{ type: 'note', params: { text: `Ran \`${name}\`: it failed: ${(e as Error).message}` } }], actor)
+      this.add(itemId, [{ type: 'topic', params: { text: `Ran \`${name}\`: it failed: ${(e as Error).message}` } }], actor)
       throw e
     }
     const shown = typeof out === 'string' ? out : JSON.stringify(out, null, 2)
     const text = shown && shown !== 'null' ? `Ran \`${name}\`:\n\n\`\`\`${typeof out === 'string' ? '' : 'json'}\n${shown.length > 3000 ? `${shown.slice(0, 3000)}\n…` : shown}\n\`\`\`` : `Ran \`${name}\`.`
-    this.add(itemId, [{ type: 'note', params: { text } }], actor)
+    this.add(itemId, [{ type: 'topic', params: { text } }], actor)
     await this.idle()
     return out
   }
@@ -465,20 +520,15 @@ export class Engine extends EventEmitter {
       resolved: r.resolved,
       cancelled: r.cancelled,
       parent: r.parent_id,
-      assignees: r.type === 'task' ? this.assignees(r.id) : [],
+      assignees: this.assignees(r.id),
+      owner: this.owner(r.id),
       created_by: r.created_by,
       created_at: r.created_at,
     }
   }
 
-  /** Changes a widget's state: a value on its event (egdb keeps every one before). */
-  async setWidgetState(itemId: string, state: unknown, actor = this.me()): Promise<void> {
-    if (this.row(itemId)?.type !== 'widget') throw new Error(`No widget ${itemId}.`)
-    return this.setValue(itemId, 'widget_state', state, actor)
-  }
-
   /**
-   * Sets one value on an item (null clears it): any key, any value (a task's title, a widget's state, a bot's
+   * Sets one value on an item (null clears it): any key, any value (a topic's text, status or display, a bot's
    * instructions, a script's state on a topic it holds); a type's params are advice. Not how it stands (`type`, `resolved` and the like: those
    * have their own ways), nor what the app keeps for itself on a bot. egdb keeps every value it had. Whatever shows it
    * is told at once (every change is).
@@ -487,12 +537,19 @@ export class Engine extends EventEmitter {
     const row = this.row(id)
     if (!row) throw new Error(`No item ${id}.`)
     if (STATE_KEYS.has(key) || OWN_KEYS.has(key)) throw new Error(`${key} can't be set this way.`)
+    // A topic's status is how it stands too: closing one is `close`, and the rest of what closing does.
+    if (row.type === 'topic' && key === 'open') {
+      if (value === false) return this.close(id, { actor })
+      if (value !== true && value !== null && value !== undefined) throw new Error('A topic is open (true), closed (false) or has no status (null).')
+      if (JSON.stringify(row.params.open ?? null) === JSON.stringify(value ?? null)) return
+      this.store.setOpen(id, (value as boolean | null) ?? null, actor, this.now())
+      this.emit('change')
+      return
+    }
     // Duck typed: any key, any value. A type's params are advice, not a check.
     const next = { ...row.params, [key]: value ?? undefined }
     if (JSON.stringify(row.params[key] ?? null) === JSON.stringify(value ?? null)) return
     this.store.setParams(id, Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined)), actor, this.now())
-    // A bot's settings changing is something happening to it.
-    if (row.type === 'bot') this.configured.set(id, { n: this.store.moment(), at: this.now() })
     this.emit('change')
   }
 
@@ -586,20 +643,12 @@ export class Engine extends EventEmitter {
     return r?.type === 'script' && !r.resolved
   }
 
-  /** Who a task goes back to when a bot lets go of it: the person who made it, else the owner of the task it sits in. */
-  owner(itemId: string): string | null {
-    const r = this.row(itemId)
-    if (r && this.isUser(r.created_by)) return r.created_by
-    if (r?.parent_id && this.row(r.parent_id)?.type === 'task') return this.owner(r.parent_id)
-    return null
-  }
-
   /**
-   * Assigns a task to someone (an `assigned_to` link from it), or takes it off them. Assigning someone who has it
-   * already writes the link again: for a bot, that is something happening to it, so it wakes.
+   * Assigns an item to someone (an `assignees` link from it), or takes it off them. Assigning someone who has it
+   * already writes the link again: for a bot, that makes it due on the item again.
    */
   setAssignee(itemId: string, to: string, on: boolean, actor: string, runId: string | null = null): void {
-    if (this.row(itemId)?.type !== 'task') throw new Error(`No task ${itemId}.`)
+    if (!this.row(itemId)) throw new Error(`No item ${itemId}.`)
     if (on && this.holder(to) !== to) throw new Error(`Nobody is ${to}, to assign.`)
     if (!on && !this.assignees(itemId).includes(to)) return
     this.store.setAssigned(itemId, to, on, actor, this.now())
@@ -607,9 +656,9 @@ export class Engine extends EventEmitter {
     this.emit('change')
   }
 
-  /** Assigns a task to a person or a bot (by username, name or id), or takes it off them. */
+  /** Assigns an item to a person or a bot (by username, name or id), or takes it off them. */
   async assign(itemId: string, to: string, on: boolean, actor = this.me(), runId: string | null = null): Promise<void> {
-    if (this.must(itemId).closed && on) throw new Error('That task is closed.')
+    if (this.must(itemId).closed && on) throw new Error('That item is closed.')
     this.setAssignee(itemId, on ? this.resolveAssignee(to) : (this.assignees(itemId).find((a) => a === to) ?? this.resolveAssignee(to)), on, actor, runId)
     // A script is run from inside a task's queue, so waiting for the queues to empty would wait for itself.
     if (actor !== 'script') await this.idle()
@@ -617,10 +666,10 @@ export class Engine extends EventEmitter {
 
   // ---- bots ----
 
-  /** A bot's settings: its params (egdb keeps every value they had). */
+  /** A bot's settings: its params (egdb keeps every value they had). A script's too, where both run alike. */
   private agentParams(id: string): Record<string, unknown> {
     const r = this.row(id)
-    return r?.type === 'bot' ? r.params : {}
+    return r?.type === 'bot' || r?.type === 'script' ? r.params : {}
   }
 
   private agentName(id: string): string {
@@ -641,9 +690,16 @@ export class Engine extends EventEmitter {
     return dir
   }
 
-  /** The open tasks assigned to someone: their `assigned_to` links, followed backwards. */
+  /** The open items assigned to someone (their `assignees` links, followed backwards), the longest held first. */
   assignedTo(assignee: string): string[] {
-    return this.store.assignedTo(assignee).filter((id) => this.row(id)?.type === 'task' && !this.row(id)!.resolved)
+    return this.store
+      .assignedTo(assignee)
+      .filter((id) => this.row(id) && !this.isClosed(id))
+      .sort((a, b) => {
+        const x = this.store.assignment(a, assignee)!
+        const y = this.store.assignment(b, assignee)!
+        return x.at - y.at || x.n - y.n
+      })
   }
 
   agent(id: string): Agent | null {
@@ -657,15 +713,14 @@ export class Engine extends EventEmitter {
       instructions: String(p.instructions ?? ''),
       provider: String(p.provider ?? 'claude'),
       model: String(p.model || DEFAULT_MODEL),
-      debounceMinutes: Number(p.debounce_minutes ?? DEFAULT_DEBOUNCE),
-      cycleMinutes: Number(p.cycle_minutes ?? PERIODIC_MINUTES),
+      cycleMinutes: this.cycleMinutes(id),
       folder: p.folder ? String(p.folder) : join(this.dataDir, 'bots', `${slug(name)}-${id.slice(0, 8)}`),
       sessionId: (p.session_id as string) ?? null,
       lastRun: (p.last_run as LastRun) ?? null,
       createdAt: r.created_at,
       deleted: r.resolved,
       runId: this.running.get(id)?.id ?? null,
-      wakesAt: r.resolved ? null : (this.wake(id)?.at ?? null),
+      wakesAt: r.resolved ? null : (this.due(id)?.at ?? null),
       pausedUntil: this.pausedUntil(String(p.provider ?? 'claude')),
       assigned: this.assignedTo(id),
     }
@@ -688,7 +743,7 @@ export class Engine extends EventEmitter {
 
   /** Makes a bot (no id) or changes its settings (which wakes it). Answers its id. */
   async saveAgent(
-    a: { id?: string; name: string; instructions: string; provider: string; model: string; debounceMinutes: number; cycleMinutes?: number; folder?: string },
+    a: { id?: string; name: string; instructions: string; provider: string; model: string; debounceMinutes?: number; cycleMinutes?: number; folder?: string },
     actor = this.me(),
   ): Promise<string> {
     const name = a.name.trim().replace(/^@/, '')
@@ -701,7 +756,6 @@ export class Engine extends EventEmitter {
       instructions: a.instructions,
       provider: a.provider || 'claude',
       model: a.model.trim() || DEFAULT_MODEL,
-      debounce_minutes: Number.isFinite(Number(a.debounceMinutes)) && String(a.debounceMinutes) !== '' ? Math.max(0, Number(a.debounceMinutes)) : DEFAULT_DEBOUNCE,
       ...(a.folder?.trim() ? { folder: a.folder.trim() } : {}),
       ...(a.cycleMinutes !== undefined && String(a.cycleMinutes) !== '' && Number.isFinite(Number(a.cycleMinutes)) ? { cycle_minutes: Math.max(0, Number(a.cycleMinutes)) } : {}),
     }
@@ -714,7 +768,6 @@ export class Engine extends EventEmitter {
     const changed = Object.fromEntries(Object.entries(params).filter(([k, v]) => String(now[k] ?? '') !== String(v ?? '')))
     if (Object.keys(changed).length) {
       this.store.setParams(a.id, { ...this.row(a.id)!.params, ...changed }, actor, this.now())
-      this.configured.set(a.id, { n: this.store.moment(), at: this.now() })
       this.emit('change')
     }
     return a.id
@@ -733,103 +786,83 @@ export class Engine extends EventEmitter {
     await this.idle()
   }
 
-  /** Wakes a bot now, whatever its debounce says. */
+  /** Runs a bot now, on the first item it holds, whatever it last saw. */
   wakeAgent(id: string): void {
     if (!this.agent(id)) throw new Error(`No bot ${id}.`)
     this.woken.set(id, this.now())
     this.emit('change')
   }
 
-  /**
-   * When a bot wakes next, and for what: its own chat (when someone wrote in it, or it is woken by hand), and every
-   * open task it has, each with the items new in it since the bot was last prompted (less what the bot itself did,
-   * but a child task closing is always news). The rule is `dueAt` (wakes.ts), the same as a script's: once something
-   * happened to it since it last woke (a topic assigned to it, a note in its chat, its settings changed), its debounce
-   * after; else its cycle (`cycle_minutes`, PERIODIC_MINUTES by default) after it last woke, while it holds topics. News
-   * in a topic it holds waits for that cycle. Woken by hand, at once. Null when nothing calls for it.
-   */
-  wake(agentId: string): { at: number; items: Map<string, Set<string>>; fresh: Set<string> } | null {
-    const self = `bot:${agentId}`
-    const mark = this.marks.get(agentId) ?? { n: 0, at: 0 }
-    const lastStart = (this.agentParams(agentId).last_run as LastRun | undefined)?.startedAt ?? this.row(agentId)?.created_at ?? 0
-    const woken = this.woken.get(agentId)
-    const assigned = this.assignedTo(agentId)
-    const seen = this.seen(agentId)
-    const items = new Map(assigned.map((id) => [id, new Set<string>()]))
-    const fresh = new Set<string>()
-    let trigger = 0
-    for (const itemId of assigned) {
-      const given = this.store.assignment(itemId, agentId)!
-      if (after(given.n, given.at, mark) && given.by !== self) trigger = Math.max(trigger, given.at)
-      // A task its session has not seen yet (one it gave itself, say) is news to it.
-      // It is a reason to wake only if it was just given (after a fresh start, its old tasks are news when they move).
-      if (!seen.includes(itemId)) {
-        fresh.add(itemId)
-      }
-      for (const e of this.store.children(itemId)) {
-        const added = after(e.added_n, e.created_at, mark) && e.created_by !== self
-        const resolved = e.resolved && after(e.resolved_n, e.resolved_at ?? 0, mark) && (e.resolved_by !== self || e.type === 'task')
-        if (!added && !resolved) continue
-        items.get(itemId)!.add(e.id)
-        fresh.add(itemId)
-      }
-    }
-    // Its own chat: someone wrote in it.
-    const chat = new Set(this.store.children(agentId).filter((e) => after(e.added_n, e.created_at, mark) && e.created_by !== self).map((e) => e.id))
-    for (const id of chat) trigger = Math.max(trigger, this.row(id)!.created_at)
-    if (chat.size || woken !== undefined) {
-      items.set(agentId, chat)
-      if (chat.size) fresh.add(agentId)
-    }
-    const configured = this.configured.get(agentId)
-    if (configured && after(configured.n, configured.at, mark)) trigger = Math.max(trigger, configured.at)
-    if (!items.size) {
-      this.woken.delete(agentId)
-      return null
-    }
-    const p = this.agentParams(agentId)
-    // Only what happens to it wakes it (a topic assigned to it, its chat, its settings): news in its topics waits for its cycle.
-    const edited = trigger
-    const at = dueAt({
-      lastWake: lastStart,
-      edited: edited || null,
-      debounceMs: Number(p.debounce_minutes ?? DEFAULT_DEBOUNCE) * MINUTE,
-      cycleMs: Number(p.cycle_minutes ?? PERIODIC_MINUTES) * MINUTE || null,
-      hasWork: assigned.length > 0,
-    })
-    const due = [...(woken !== undefined ? [woken] : []), ...(at !== null ? [at] : [])]
-    return due.length ? { at: Math.min(...due), items, fresh } : null
+  /** How long a bot or script waits before running on an item again that it still holds. */
+  private cycleMinutes(id: string): number {
+    const c = Number(this.agentParams(id).cycle_minutes ?? CYCLE_MINUTES)
+    return Number.isFinite(c) ? Math.max(0, c) : CYCLE_MINUTES
+  }
+
+  /** When a bot or script last ran on an item (its mark there), if it has. */
+  private markOn(agentId: string, itemId: string): Mark | null {
+    return this.marks.get(agentId)?.get(itemId) ?? null
   }
 
   /**
-   * Starts a bot's run, if it is due and not running: its chat and every task it has, each with its new items (or,
-   * for a task its session has not seen, its whole history). Its session is its own: resumed if it has one, otherwise new.
+   * What a bot or script runs on next, and when: the one rule for both. Of the open items assigned to it, the longest
+   * held first, the first that is due: one it has not run on yet, or that was assigned to it again (by anyone else) since
+   * it last ran on it, is due at once; one it ran on is due again its cycle (`cycle_minutes`, CYCLE_MINUTES) after. Woken
+   * by hand, its first item is due at once. Null when it holds nothing.
+   */
+  due(agentId: string): { item: string; at: number } | null {
+    const self = [`bot:${agentId}`, agentId, 'script']
+    const cycle = this.cycleMinutes(agentId) * MINUTE
+    let next: { item: string; at: number } | null = null
+    const held = this.assignedTo(agentId)
+    for (const itemId of held) {
+      const mark = this.markOn(agentId, itemId)
+      const given = this.store.assignment(itemId, agentId)!
+      const at = !mark || (after(given.n, given.at, mark) && !self.includes(given.by)) ? given.at : cycle ? mark.at + cycle : null
+      if (at !== null && (!next || at < next.at)) next = { item: itemId, at }
+      // The first that is due now is the one: the longest held go first.
+      if (at !== null && at <= this.now()) return { item: itemId, at }
+    }
+    const woken = this.woken.get(agentId)
+    if (woken !== undefined && held.length) return { item: held[0], at: woken }
+    return next
+  }
+
+  /**
+   * Starts a bot's run, if it is due and not running: on one item, with what is new in it since the bot last ran on it
+   * (or, for an item its session has not seen, its whole history). Its session is its own: resumed if it has one,
+   * otherwise new.
    */
   claim(agentId: string): { agent: Agent; items: PromptItem[]; resume: boolean; handoff: string | null; recap: boolean } | null {
     const agent = this.agent(agentId)
     if (!agent || agent.deleted || this.running.has(agentId)) return null
-    const wake = this.wake(agentId)
-    if (!wake || wake.at > this.now()) return null
+    const due = this.due(agentId)
+    if (!due || due.at > this.now()) return null
+    const itemId = due.item
     // Idle past `bots.idle_minutes` since its last run ended, it starts afresh: resuming would re-read the whole session uncached.
     const last = this.agentParams(agentId).last_run as LastRun | undefined
     const idle = Number(this.settings.get('bots.idle_minutes', IDLE_MINUTES)) * MINUTE
     if (agent.sessionId !== null && last?.endedAt && this.now() - last.endedAt > idle) this.setParam(agentId, 'session_id', null, `bot:${agentId}`)
     const seen = this.seen(agentId)
-    const items = [...wake.items].map(([itemId, ids]) => {
-      if (itemId === agentId) return { item: this.toItem(this.row(agentId)!), children: this.children(agentId).filter((e) => ids.has(e.id)), first: false, own: true }
-      const first = !seen.includes(itemId)
-      const children = first ? this.children(itemId) : this.children(itemId).filter((e) => ids.has(e.id))
-      // What is pinned to it: all of it the first time, then what was pinned since the last run began. Each at its focus
-      // (a note with its tree), but a chat as its pill: its history is long, and get_item reads it.
-      const pins = this.store
-        .pins(itemId)
-        .filter((p) => first || !last || p.at >= last.startedAt)
-        .flatMap((p) => {
-          const info = this.info(p.id)
-          return info ? [{ info, text: this.view(p.id, FOCUS[info.type] === 'chat' ? 'pill' : 'focus')! }] : []
-        })
-      return { item: this.must(itemId), children, first, pins }
-    })
+    const self = `bot:${agentId}`
+    const mark = this.markOn(agentId, itemId) ?? { n: 0, at: 0 }
+    const own = itemId === agentId
+    const first = !own && !seen.includes(itemId)
+    // What is new: what was added (or a blocker that resolved) since its mark, less what it did itself.
+    const news = (e: ItemRow) =>
+      (after(e.added_n, e.created_at, mark) && e.created_by !== self) || (e.resolved && after(e.resolved_n, e.resolved_at ?? 0, mark) && e.resolved_by !== self)
+    const children = this.store.children(itemId, 'comments').filter((e) => first || news(e)).map((e) => this.toInfo(e))
+    // What is pinned to it: all of it the first time, then what was pinned since it last ran on it. Each at its focus
+    // (a topic showing its notes, with its tree), but a chat as its pill: its history is long, and get_item reads it.
+    const pins = own
+      ? []
+      : this.store
+          .pins(itemId)
+          .filter((p) => first || p.at >= mark.at)
+          .flatMap((p) => {
+            const info = this.info(p.id)
+            return info ? [{ info, text: this.view(p.id, focusKind(info) === 'chat' ? 'pill' : 'focus')! }] : []
+          })
     const resume = this.agentParams(agentId).session_id != null
     // A fresh session hears the handoff its last one left, once.
     const handoff = !resume && typeof this.agentParams(agentId).handoff === 'string' ? String(this.agentParams(agentId).handoff) : null
@@ -839,7 +872,7 @@ export class Engine extends EventEmitter {
       if (handoff !== null) this.setParam(agentId, 'handoff', null, `bot:${agentId}`)
     }
     this.woken.delete(agentId)
-    return { agent: this.agent(agentId)!, items, resume, handoff, recap: !resume && !!last }
+    return { agent: this.agent(agentId)!, items: [{ item: this.must(itemId), children, first: !resume || first, own, pins }], resume, handoff, recap: !resume && !!last }
   }
 
   /**
@@ -850,13 +883,13 @@ export class Engine extends EventEmitter {
     const actor = `bot:${agentId}`
     const [did, given] = await Promise.all([
       this.store.log({ authors: [actor], limit: limit * 2 }),
-      this.store.log({ entities: [agentId], keys: ['assigned_to'], limit }),
+      this.store.log({ entities: [agentId], keys: ['assignees', 'assigned_to'], limit }),
     ])
     const name = (id: string | null): string => {
       const r = id ? this.row(id) : undefined
       if (!id || !r) return String(id)
       if (r.type === 'user') return `@${this.actorName(id)}`
-      if (r.type === 'task' || r.type === 'bot' || r.type === 'script') return `"${this.title(id, r.params)}" [${id}]`
+      if ((r.type === 'topic' && r.params.open !== undefined) || r.type === 'bot' || r.type === 'script') return `"${this.title(id, r.params)}" [${id}]`
       return `a ${r.type} [${id}]${r.parent_id ? ` in ${name(r.parent_id)}` : ''}`
     }
     const brief = (v: unknown) => {
@@ -866,11 +899,11 @@ export class Engine extends EventEmitter {
     const when = (at: number) => new Date(at).toISOString().slice(0, 16).replace('T', ' ')
     // Its own bookkeeping, and the type a new item is made with, say nothing.
     const wrote = did
-      .filter((e) => !(e.entity === agentId && OWN_KEYS.has(e.key)) && e.key !== 'type' && !(e.kind === 'link' && e.key === 'contains'))
+      .filter((e) => !(e.entity === agentId && OWN_KEYS.has(e.key)) && e.key !== 'type' && !(e.kind === 'link' && ['contains', 'comments', 'notes', 'owns'].includes(e.key)))
       .slice(0, limit)
       .map((e) =>
         e.kind === 'link'
-          ? e.key === 'assigned_to'
+          ? e.key === 'assignees' || e.key === 'assigned_to'
             ? `- ${when(e.at)} ${e.removed ? 'took' : 'assigned'} ${name(e.entity)} ${e.removed ? 'off' : 'to'} ${name(e.other)}`
             : `- ${when(e.at)} ${e.removed ? 'unlinked' : 'linked'} ${name(e.entity)} → ${name(e.other)} (${e.key})`
           : `- ${when(e.at)} ${e.value === null ? `cleared ${e.key} on` : `set ${e.key} on`} ${name(e.entity)}${e.value === null ? '' : `: ${brief(e.value)}`}`,
@@ -891,12 +924,27 @@ export class Engine extends EventEmitter {
     return p.session_id ? ((p.seen as string[] | undefined) ?? []) : []
   }
 
-  /** A run begins: the bot's `last_run` says so, and what comes after now is new to it. */
+  /**
+   * Marks that a bot or script ran on an item (null: as if it never had): what comes after is new to it, and it is not
+   * due there again for its cycle. Kept as its `last_seen` value (each item's time), for the items it still holds.
+   */
+  private setMark(agentId: string, itemId: string, mark: Mark | null): void {
+    const marks = this.marks.get(agentId) ?? new Map<string, Mark>()
+    if (mark) marks.set(itemId, mark)
+    else marks.delete(itemId)
+    this.marks.set(agentId, marks)
+    const held = new Set(this.store.assignedTo(agentId))
+    for (const k of marks.keys()) if (!held.has(k) && k !== itemId) marks.delete(k)
+    this.setParam(agentId, 'last_seen', Object.fromEntries([...marks].map(([k, m]) => [k, m.at])), this.row(agentId)?.type === 'bot' ? `bot:${agentId}` : 'script')
+  }
+
+  /** A run begins: the bot's `last_run` says so, and what comes after now in its item is new to it. */
   startRun(agentId: string, itemIds: string[]): string {
     const id = randomUUID()
     const at = this.now()
-    this.running.set(agentId, { id, agentId, itemIds, startedAt: at, assigned: new Set(), before: { mark: this.marks.get(agentId), seen: this.seen(agentId) } })
-    this.marks.set(agentId, { n: this.store.moment(), at })
+    const mark = { n: this.store.moment(), at }
+    this.running.set(agentId, { id, agentId, itemIds, startedAt: at, assigned: new Set(), before: { mark: this.markOn(agentId, itemIds[0]) ?? undefined, seen: this.seen(agentId) }, mark })
+    for (const itemId of itemIds) this.setMark(agentId, itemId, mark)
     const lastRun: LastRun = { id, startedAt: at, endedAt: null, items: itemIds, costUsd: null, turns: null, error: null, output: null }
     this.setParam(agentId, 'last_run', lastRun, `bot:${agentId}`)
     const seen = this.seen(agentId)
@@ -972,7 +1020,7 @@ export class Engine extends EventEmitter {
           .parse(end.structured ?? {})
         updates = (out.updates ?? []).map(({ events, ...u }) => ({ ...u, items: [...(u.items ?? []), ...(events ?? [])] })) as BotUpdate[]
         handoff = out.handoff?.trim() || null
-        for (const u of updates) if (!this.get(u.item) && u.item !== agentId) throw new Error(`No task ${u.item}.`)
+        for (const u of updates) if (!this.row(u.item)) throw new Error(`No item ${u.item}.`)
       } catch (e) {
         error = `The bot's output was not usable: ${(e as Error).message}`
       }
@@ -986,15 +1034,14 @@ export class Engine extends EventEmitter {
     this.store.batch(() => {
       // A failure is said in each task the bot has, which go back to their owners.
       const failed = (itemId: string, why: string) => {
-        if (this.get(itemId)?.closed || !this.assignees(itemId).includes(agentId)) return
-        this.add(itemId, [{ type: 'note', params: { text: `@${this.agentName(agentId)} failed: ${why}` } }], 'system')
+        if (this.isClosed(itemId) || !this.assignees(itemId).includes(agentId)) return
+        this.add(itemId, [{ type: 'topic', params: { text: `@${this.agentName(agentId)} failed: ${why}` } }], 'system')
         this.handBack(itemId, agentId, runId)
       }
       // Stopped by a usage limit, the run never really happened: the bot keeps its tasks, and what was new stays new, for
       // when the runner lets it run again.
       if (error && end.limited) {
-        if (run.before.mark) this.marks.set(agentId, run.before.mark)
-        else this.marks.delete(agentId)
+        for (const itemId of run.itemIds) this.setMark(agentId, itemId, run.before.mark ?? null)
         this.setParam(agentId, 'seen', run.before.seen, actor)
         return
       }
@@ -1005,32 +1052,33 @@ export class Engine extends EventEmitter {
       const broken = new Set<string>()
       // What a person said in a task while the run went on, the run did not see: a run's update can't hand that task
       // away from the bot. The bot keeps it (beside whoever the update gave it to), and wakes again for it.
-      const mark = this.marks.get(agentId) ?? { n: 0, at: 0 }
+      const mark = run.mark
       const heard = (itemId: string) =>
         run.assigned.has(itemId) || this.store.children(itemId).some((e) => after(e.added_n, e.created_at, mark) && this.isUser(e.created_by))
       for (const u of updates) {
-        if (this.get(u.item)?.closed) continue
+        if (this.isClosed(u.item)) continue
         try {
           // Each update is checked on its own: one that is wrong fails only its task.
           // Handing a task to a bot or script that is gone (cancelled since) drops it from the list, rather than failing the update.
           const gone = (u.assign ?? []).filter((a) => !this.holder(a) && this.goneHolder(a))
           const kept = (u.assign ?? []).filter((a) => !gone.includes(a))
-          const to = u.assign && u.item !== agentId && (kept.length || !gone.length) ? new Set(kept.map((a) => this.resolveAssignee(a))) : null
-          if (gone.length && u.item !== agentId) {
-            this.add(u.item, [{ type: 'note', params: { text: `@${this.agentName(agentId)} gave this to ${gone.map((a) => this.goneHolder(a)).join(', ')}, which can't have tasks now (cancelled or closed).` } }], 'system')
+          const to = u.assign && (kept.length || !gone.length) ? new Set(kept.map((a) => this.resolveAssignee(a))) : null
+          if (gone.length) {
+            this.add(u.item, [{ type: 'topic', params: { text: `@${this.agentName(agentId)} gave this to ${gone.map((a) => this.goneHolder(a)).join(', ')}, which can't have tasks now (cancelled or closed).` } }], 'system')
             if (!to && this.assignees(u.item).includes(agentId)) this.handBack(u.item, agentId, runId)
           }
           if (to && !to.has(agentId) && !u.close && heard(u.item)) {
             to.add(agentId)
+            this.setMark(agentId, u.item, null)
           }
-          const specs: ItemSpec[] = [...(u.message ? [{ type: 'note' as const, params: { text: u.message } }] : []), ...this.prepare(u.items ?? [], 'bot')]
+          const specs: ItemSpec[] = [...(u.message ? [{ type: 'topic' as const, params: { text: u.message } }] : []), ...this.prepare(u.items ?? [], 'bot')]
           if (specs.length) this.add(u.item, specs, actor)
           if (to) {
             const now = this.assignees(u.item)
             for (const a of to) if (!now.includes(a)) this.setAssignee(u.item, a, true, actor, runId)
             for (const a of now) if (!to.has(a)) this.setAssignee(u.item, a, false, actor, runId)
           }
-          if (u.close && u.item !== agentId) closing.push(u.item)
+          if (u.close && this.row(u.item)?.type === 'topic') closing.push(u.item)
         } catch (e) {
           broken.add(u.item)
           failed(u.item, `its update could not be applied: ${(e as Error).message}`)
@@ -1038,7 +1086,7 @@ export class Engine extends EventEmitter {
       }
       // A task it said who has is settled; the rest are settled here.
       const said = new Set([...updates.filter((u) => u.assign).map((u) => u.item), ...broken])
-      for (const itemId of run.itemIds) if (!closing.includes(itemId) && !said.has(itemId) && this.get(itemId) && !this.get(itemId)!.closed) this.settle(itemId, run)
+      for (const itemId of run.itemIds) if (!closing.includes(itemId) && !said.has(itemId) && this.row(itemId) && !this.isClosed(itemId)) this.settle(itemId, run)
     })
     // Done for now: its next run starts a fresh session (with the handoff said once), rather than carrying this one on.
     if (handoff && !error && !this.row(agentId)?.resolved) {
@@ -1060,7 +1108,8 @@ export class Engine extends EventEmitter {
     if (!this.assignees(itemId).includes(agentId) || run.assigned.has(itemId)) return
     const { blockers } = this.must(itemId)
     if (blockers.some((b) => b.createdBy === `bot:${agentId}` && !this.waitsOnHuman(b))) return
-    if (this.wake(agentId)?.fresh.has(itemId)) return
+    // A person wrote in it while it ran: the run did not see that, so the bot keeps it, and is due on it again.
+    if (this.store.children(itemId).some((e) => after(e.added_n, e.created_at, run.mark) && this.isUser(e.created_by))) return void this.setMark(agentId, itemId, null)
     this.handBack(itemId, agentId, run.id)
   }
 
@@ -1068,7 +1117,7 @@ export class Engine extends EventEmitter {
   private handBack(itemId: string, agentId: string, runId: string | null, actor = `bot:${agentId}`): void {
     this.setAssignee(itemId, agentId, false, actor, runId)
     const owner = this.owner(itemId)
-    if (!this.assignees(itemId).length && owner && this.isUser(owner)) this.setAssignee(itemId, owner, true, actor, runId)
+    if (!this.assignees(itemId).length && owner && owner !== agentId && this.holder(owner) === owner) this.setAssignee(itemId, owner, true, actor, runId)
   }
 
   // ---- actions ----
@@ -1090,59 +1139,60 @@ export class Engine extends EventEmitter {
 
   // ---- items ----
 
-  /** Checks items and expands them as their types say, without touching the store. */
+  /** Checks items and expands them as their types say, without touching the store. An older build's `task` and `note` are topics. */
   prepare(specs: ItemSpec[], author: Author): ItemSpec[] {
-    return specs.flatMap((s) => {
+    return specs.flatMap((given) => {
+      const s = { ...given, ...asTopic(given) } as ItemSpec
       const type = this.type(s?.type)
-      if (s.type === 'process') throw new Error('Processes are switched off for now.')
       if (author === 'bot' && !type.bots) throw new Error(`A bot may not add a ${s.type} item.`)
-      // A task's first items, by their old name (from when items were called items).
-      const given = s.type === 'task' && s.params && 'events' in s.params && !('items' in s.params) ? { ...s.params, items: s.params.events } : s.params
-      const parsed = z.object(type.params).safeParse(given ?? {})
+      const parsed = z.object(type.params).safeParse(s.params ?? {})
       if (!parsed.success)
         throw new Error(`Bad params for a ${s.type} item: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
       let params = parsed.data as Record<string, unknown>
       if (s.type === 'file') params = this.files.prepare(params)
       if (s.type === 'approval' && !this.actions.find((a) => a.name === params.action)?.unsafe)
         throw new Error(`${params.action} is not an unsafe action, so it needs no approval.`)
-      // Who a new task goes to, as ids.
-      if (s.type === 'task' && params.assignees) params.assignees = (params.assignees as string[]).map((a) => this.resolveAssignee(a))
+      // Who a new topic goes to, as ids.
+      if (s.type === 'topic' && params.assignees) params.assignees = (params.assignees as string[]).map((a) => this.resolveAssignee(a))
       if (s.type === 'user' && this.row(String(params.username))) throw new Error(`The username ${params.username} is taken.`)
-      // Prepared now, so a bad one fails the whole list; added in the task as it is.
-      if (s.type === 'task' && params.items) params.items = this.prepare(params.items as ItemSpec[], author)
+      // Prepared now, so a bad one fails the whole list; added in the topic as it is.
+      for (const k of ['comments', 'notes'] as const) if (s.type === 'topic' && params[k]) params[k] = this.prepare(params[k] as ItemSpec[], author)
       const expanded = type.expand ? type.expand(params, author) : [{ type: s.type, params }]
-      return expanded.map((e, i) => ({ type: e.type, params: e.params, ref: i === 0 ? (s.ref ?? e.ref) : e.ref, ...(i === 0 && s.pin ? { pin: true } : {}) }))
+      return expanded.map((e, i) => ({ type: e.type as ItemSpec['type'], params: e.params, ref: i === 0 ? (s.ref ?? e.ref) : e.ref, ...(i === 0 && s.pin ? { pin: true } : {}) }))
     })
   }
 
   /**
-   * Adds items, already prepared, in a task or a bot's chat (or, for tasks, bots and people, in none). Plain ones
-   * resolve at once; blockers wait. A task's first items (`items`) are added in it, and its `assignees` assigned;
-   * neither is kept in its values. A task whose key is already taken is left out. Answers the ids added.
+   * Adds items, already prepared, in a topic (its comments, or its notes with `via`) or a bot's or script's own chat
+   * (or, for what may, in none). Plain ones resolve at once; blockers wait. A topic's first comments and notes are
+   * added in it, and its `assignees` assigned; neither is kept in its values. A topic whose key is already taken is left
+   * out. A topic, bot or script is owned by whoever made it if a person, else by the owner of what it is in, else by the
+   * owner of the bot that made it. Answers the ids added.
    */
-  add(parentId: string | null, specs: ItemSpec[], createdBy: string): string[] {
-    return this.store.batch(() => this.addNow(parentId, specs, createdBy))
+  add(parentId: string | null, specs: ItemSpec[], createdBy: string, via: Via = 'comments'): string[] {
+    return this.store.batch(() => this.addNow(parentId, specs, createdBy, parentId, via))
   }
 
-  /** Adds one plain item with an id of its own choosing (a URL), in a task. */
-  private addAs(parentId: string | null, id: string, spec: ItemSpec, createdBy: string): void {
+  /** Adds one plain item with an id of its own choosing (a URL), in no item. */
+  private addAs(id: string, spec: ItemSpec, createdBy: string): void {
     const at = this.now()
     this.store.insertItem({
-      id, parent_id: parentId, seq: this.store.nextSeq(parentId), type: spec.type, params: this.prepare([spec], 'human')[0].params, created_by: createdBy, created_at: at,
+      id, parent_id: null, via: null, seq: this.store.nextSeq(null), type: spec.type, params: this.prepare([spec], 'human')[0].params, created_by: createdBy, created_at: at,
       resolved: true, resolved_at: at, resolved_by: createdBy, cancelled: false, data: null, memo: null, reactions: [], next_check_at: null,
       last_error: null, runs: 0, added_n: 0, resolved_n: 0,
     })
   }
 
-  private addNow(parentId: string | null, specs: ItemSpec[], createdBy: string, pinTo = parentId): string[] {
-    // A detached task sits in no task, wherever it is added (and is pinned there, if it says so).
-    const detached = parentId ? specs.filter((s) => s.type === 'task' && s.params.detached) : []
-    if (detached.length) return [...this.addNow(parentId, specs.filter((s) => !detached.includes(s)), createdBy), ...this.addNow(null, detached, createdBy, parentId)]
-    const keyed = (s: ItemSpec) => s.type === 'task' && s.params.key && this.store.ofType('task').some((r) => r.params.key === s.params.key)
+  private addNow(parentId: string | null, specs: ItemSpec[], createdBy: string, pinTo = parentId, via: Via = 'comments'): string[] {
+    // A detached topic sits in no topic, wherever it is added (and is pinned there, if it says so).
+    const detached = parentId ? specs.filter((s) => s.type === 'topic' && s.params.detached) : []
+    if (detached.length) return [...this.addNow(parentId, specs.filter((s) => !detached.includes(s)), createdBy, pinTo, via), ...this.addNow(null, detached, createdBy, parentId)]
+    const keyed = (s: ItemSpec) => s.type === 'topic' && s.params.key && this.store.ofType('topic').some((r) => r.params.key === s.params.key)
     specs = specs.filter((s) => !keyed(s))
-    if (!parentId && specs.some((s) => !SIT_IN_NONE.includes(s.type))) throw new Error(`Only these can sit in no task: ${SIT_IN_NONE.join(', ')}.`)
-    if (parentId && specs.some((s) => s.type === 'search')) throw new Error('The search item sits in no task.')
-    if (parentId && this.row(parentId)?.type === 'bot' && specs.some((s) => s.type !== 'note')) throw new Error("A bot's own chat holds only notes.")
+    if (!parentId && specs.some((s) => !SIT_IN_NONE.includes(s.type))) throw new Error(`Only these can sit in no topic: ${SIT_IN_NONE.join(', ')}.`)
+    if (parentId && specs.some((s) => s.type === 'search')) throw new Error('The search item sits in no topic.')
+    if (parentId && specs.some((s) => s.type === 'bot' || s.type === 'user')) throw new Error('Bots and people sit in no topic.')
+    if (parentId && this.row(parentId)?.type === 'bot' && specs.some((s) => s.type !== 'topic')) throw new Error("A bot's own chat holds only topics.")
     const ids: string[] = []
     const seq = this.store.nextSeq(parentId)
     const at = this.now()
@@ -1151,27 +1201,35 @@ export class Engine extends EventEmitter {
       // A person's id is their username.
       const id = spec.type === 'user' ? String(spec.params.username) : randomUUID()
       ids.push(id)
-      const { assignees, items: first, detached: _d, ...params } = spec.params
+      const { assignees, comments, notes, detached: _d, ...params } = spec.params
+      const topic = spec.type === 'topic'
+      const closed = topic && params.open === false
       this.store.insertItem({
-        id, parent_id: parentId, seq: seq + i, type: spec.type, params, created_by: createdBy, created_at: at,
-        resolved: !type.blocking, resolved_at: type.blocking ? null : at, resolved_by: type.blocking ? null : createdBy, cancelled: false,
+        id, parent_id: parentId, via: parentId ? via : null, seq: seq + i, type: spec.type, params, created_by: createdBy, created_at: at,
+        resolved: topic ? closed : !type.blocking, resolved_at: topic ? (closed ? at : null) : type.blocking ? null : at,
+        resolved_by: topic ? (closed ? createdBy : null) : type.blocking ? null : createdBy, cancelled: false,
         data: null, memo: null, reactions: [], next_check_at: null, last_error: null,
         runs: 0, added_n: 0, resolved_n: 0,
       })
-      if (spec.type === 'task') {
-        if (Array.isArray(first) && first.length) this.addNow(id, first as ItemSpec[], createdBy)
-        // A new task goes to those given; else, made by a person, to them; else (a bot made it) to nobody.
-        const to = Array.isArray(assignees) && assignees.length ? (assignees as string[]) : this.isUser(createdBy) ? [createdBy] : []
+      if (OWNED.includes(spec.type)) {
+        const owner = this.ownerFor(createdBy, parentId)
+        if (owner) this.store.setOwner(id, owner, createdBy, at)
+      }
+      if (topic) {
+        if (Array.isArray(comments) && comments.length) this.addNow(id, comments as ItemSpec[], createdBy, id, 'comments')
+        if (Array.isArray(notes) && notes.length) this.addNow(id, notes as ItemSpec[], createdBy, id, 'notes')
+        // A new open topic goes to those given; else, made by a person, to them; else (a bot made it) to nobody.
+        const to = Array.isArray(assignees) && assignees.length ? (assignees as string[]) : params.open === true && this.isUser(createdBy) ? [createdBy] : []
         for (const a of to) this.setAssignee(id, a, true, createdBy)
       }
-      // A subtask is pinned to the task it is made in, as is anything added with `pin`.
-      if (pinTo && (spec.pin || (spec.type === 'task' && this.row(pinTo)?.type === 'task'))) this.store.pin(pinTo, id, createdBy, at)
+      // An open topic made in another is pinned to it (a subtask), as is anything added with `pin`.
+      if (pinTo && (spec.pin || (topic && params.open === true && via === 'comments' && this.row(pinTo)?.type === 'topic'))) this.store.pin(pinTo, id, createdBy, at)
     })
-    // Whatever a note links to is pulled in, as an item whose id is its URL (a Slack message or channel, or a link), in no
-    // task: made the first time, so `[url]()` (or the URL itself) opens it. It shows in no chat; pin it where it is wanted.
-    if (parentId && this.row(parentId)?.type === 'task')
-      for (const spec of specs.filter((s) => s.type === 'note'))
-        for (const url of urlsIn(String(spec.params.text ?? ''))) if (!this.row(url)) this.addAs(null, url, pulledIn(url, at), createdBy)
+    // Whatever a topic's text links to is pulled in, as an item whose id is its URL (a Slack message or channel, or a
+    // link), in no topic: made the first time, so `[url]()` (or the URL itself) opens it. It shows in no chat; pin it
+    // where it is wanted.
+    for (const spec of specs.filter((s) => s.type === 'topic'))
+      for (const url of urlsIn(String(spec.params.text ?? ''))) if (!this.row(url)) this.addAs(url, pulledIn(url, at), createdBy)
     // New waits are checked at once.
     if (specs.some((s) => s.type === 'script')) queueMicrotask(() => void this.checkDue())
     this.emit('change')
@@ -1183,33 +1241,8 @@ export class Engine extends EventEmitter {
     const r = this.row(itemId)
     if (!r || r.resolved) return
     this.store.resolveItem(itemId, data, by, this.now(), cancelled)
-    // A script cancelled lets go of the tasks it still has: each goes back to its owner, if nobody else has it.
-    if (r.type === 'script') for (const t of this.assignedTo(itemId)) if (!this.get(t)?.closed) this.handBack(t, itemId, null, 'script')
-  }
-
-  /**
-   * When a script is due, by the rule bots wake by (`dueAt`, wakes.ts): once something happened to it since it last woke (a
-   * topic assigned to it, a note in its own chat), its debounce after; with nothing new, its cycle after it last woke,
-   * while it holds topics.
-   */
-  private scriptDue(r: ItemRow): number | null {
-    const held = this.assignedTo(r.id)
-    // Never woken: as if it woke as it was made.
-    const lastWake = Number(r.params.last_wake ?? 0) || r.created_at - 1
-    const mine = (by: string | null) => !!by && (by === 'script' || by === r.id)
-    let edited = 0
-    for (const t of held) {
-      const given = this.store.assignment(t, r.id)
-      if (given && given.at > lastWake && !mine(given.by)) edited = Math.max(edited, given.at)
-    }
-    for (const e of this.store.children(r.id)) if (e.created_at > lastWake && !mine(e.created_by)) edited = Math.max(edited, e.created_at)
-    return dueAt({
-      lastWake,
-      edited: edited || null,
-      debounceMs: Number(r.params.debounce_minutes ?? DEFAULT_DEBOUNCE) * MINUTE,
-      cycleMs: Number(r.params.cycle_minutes ?? PERIODIC_MINUTES) * MINUTE || null,
-      hasWork: held.length > 0,
-    })
+    // A script cancelled lets go of the topics it still has: each goes back to its owner, if nobody else has it.
+    if (r.type === 'script') for (const t of this.assignedTo(itemId)) this.handBack(t, itemId, null, 'script')
   }
 
   /** Runs a script now, once: its play button. A person's press gives it the unsafe tools. */
@@ -1228,14 +1261,14 @@ export class Engine extends EventEmitter {
 
   // ---- people ----
 
-  /** A new task, in `parentId` or in none, with items to start it off. */
+  /** A new open topic, in `parentId` or in none, with comments to start it off. */
   async create(
     title: string,
     opts: { parentId?: string | null; key?: string; specs?: ItemSpec[]; assignees?: string[]; actor?: string; author?: Author } = {},
   ): Promise<string | null> {
     const author = opts.author ?? 'human'
-    const params = { title, ...(opts.key ? { key: opts.key } : {}), ...(opts.specs ? { items: opts.specs } : {}), ...(opts.assignees ? { assignees: opts.assignees } : {}) }
-    const [spec] = this.prepare([{ type: 'task', params }], author)
+    const params = { text: title, open: true, ...(opts.key ? { key: opts.key } : {}), ...(opts.specs ? { comments: opts.specs } : {}), ...(opts.assignees ? { assignees: opts.assignees } : {}) }
+    const [spec] = this.prepare([{ type: 'topic', params }], author)
     const [id] = this.add(opts.parentId ?? null, [spec], author === 'bot' ? 'bot' : (opts.actor ?? this.me()))
     await this.idle()
     return id ?? null
@@ -1243,23 +1276,20 @@ export class Engine extends EventEmitter {
 
   /**
    * The chat input: `text` through a preset, as `actor`. Whoever (a bot or a person) is `[id]()`-referred to in the
-   * text is assigned the task, as is whoever an `assign:<id>` preset names; then the sender is taken off it. Assigning
-   * a bot that has the task already assigns it again, which wakes it.
+   * text is assigned the item, as is whoever an `assign:<id>` preset names; then the sender is taken off it. In a bot's
+   * own chat, the bot is, when nobody else is. Assigning a bot that has the item already assigns it again, which makes it
+   * due there again.
    */
   async send(itemId: string, presetId: string, text: string, actor = this.me()): Promise<void> {
     const assignTo = presetId.startsWith('assign:') ? presetId.slice('assign:'.length) : null
     const preset = this.presets.find((p) => p.id === (assignTo ? 'note' : presetId))
     if (!preset) throw new Error(`No preset ${presetId}.`)
-    // A bot's own chat takes notes, and nothing is assigned there.
-    if (this.row(itemId)?.type === 'bot') {
-      const specs = this.prepare(preset.build(text), 'human')
-      if (!specs.length) throw new Error('Nothing to send.')
-      this.add(itemId, specs, actor)
-      return this.idle()
-    }
-    if (this.must(itemId).closed) throw new Error('This task is closed.')
+    if (this.must(itemId).closed) throw new Error('This is closed.')
     const live = (id: string) => this.holder(id) === id
-    const to = [...new Set([...(assignTo ? [this.resolveAssignee(assignTo)] : []), ...refsIn(text).filter(live)])].filter((id) => id !== actor)
+    const named = [...new Set([...(assignTo ? [this.resolveAssignee(assignTo)] : []), ...refsIn(text).filter(live)])].filter((id) => id !== actor)
+    // Written in a bot's own chat, it goes to the bot (as any item goes to whoever is named in what is sent).
+    const own = this.row(itemId)?.type === 'bot' ? [itemId] : []
+    const to = named.length ? named : own
     const specs = this.prepare(preset.build(text), 'human')
     if (!specs.length && !to.length) throw new Error('Nothing to send.')
     this.store.batch(() => {
@@ -1271,12 +1301,15 @@ export class Engine extends EventEmitter {
     await this.idle()
   }
 
-  /** Adds items in a task (or tasks in none): from a person, or from an agent through MCP (author 'bot', so its rules apply). */
-  async addItems(parentId: string | null, specs: ItemSpec[], actor = this.me(), author: Author = 'human'): Promise<string[]> {
-    // A bot's or a script's own chat takes notes too, and any other item holds what is put in it (a note, its notes).
+  /**
+   * Adds items in a topic, its comments (or its notes, with `via`), or topics and the like in none: from a person, or from
+   * an agent through MCP (author 'bot', so its rules apply).
+   */
+  async addItems(parentId: string | null, specs: ItemSpec[], actor = this.me(), author: Author = 'human', via: Via = 'comments'): Promise<string[]> {
+    // A bot's or a script's own chat takes topics too, and any other item holds what is put in it.
     if (parentId && !this.row(parentId)) throw new Error(`No item ${parentId}.`)
-    if (parentId && this.row(parentId)!.type === 'task' && this.must(parentId).closed) throw new Error('This task is closed.')
-    const ids = this.add(parentId, this.prepare(specs, author), actor)
+    if (parentId && this.row(parentId)!.type === 'topic' && this.isClosed(parentId) && via === 'comments') throw new Error('This topic is closed.')
+    const ids = this.add(parentId, this.prepare(specs, author), actor, via)
     // A script is run from inside a task's queue, so waiting for the queues to empty would wait for itself.
     if (actor !== 'script') await this.idle()
     return ids
@@ -1331,11 +1364,11 @@ export class Engine extends EventEmitter {
     await this.idle()
   }
 
-  /** Ends a blocker without it happening; a task is closed as cancelled, and a bot deleted. */
+  /** Ends a blocker without it happening; a topic is closed, and a bot deleted. */
   async cancel(itemId: string, actor = this.me()): Promise<void> {
     const info = this.info(itemId)
+    if (info?.type === 'topic') return this.close(itemId, { actor })
     if (!info || info.resolved) throw new Error('That item is not waiting.')
-    if (info.type === 'task') return this.close(itemId, { actor, how: 'cancelled' })
     if (info.type === 'bot') return this.deleteAgent(itemId, actor)
     this.resolve(itemId, { cancelled: true }, actor, true)
     this.emit('change')
@@ -1343,7 +1376,7 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * Opens a closed task again (unresolving it), as it was before it closed: who has it is unchanged, and what its
+   * Opens a closed topic again (its status open), as it was before it closed: who has it is unchanged, and what its
    * closing cancelled stays cancelled. The chat says who reopened it.
    */
   async reopen(itemId: string, actor = this.me()): Promise<void> {
@@ -1358,8 +1391,9 @@ export class Engine extends EventEmitter {
     const item = this.must(itemId)
     if (!item.closed) return
     this.store.batch(() => {
-      this.store.reopenItem(itemId, actor, this.now())
-      this.add(itemId, [{ type: 'note', params: { text: `Reopened by ${this.actorName(actor)}.` } }], 'system')
+      if (row?.type === 'topic') this.store.setOpen(itemId, true, actor, this.now())
+      else this.store.reopenItem(itemId, actor, this.now())
+      this.add(itemId, [{ type: 'topic', params: { text: `Reopened by ${this.actorName(actor)}.` } }], 'system')
     })
     this.emit('change')
     if (actor !== 'script') await this.idle()
@@ -1379,22 +1413,22 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * Moves an item into another (null: into none): the notes view's move and link, and taking a note out of its
-   * parent. When and by whom it was made become the move's (`Store.move`).
+   * Moves an item into another (null: into none), into its notes unless `via` says its comments: the notes view's move
+   * and link, and taking a note out of its parent. Who made it, and when, stay.
    */
-  async moveItem(itemId: string, to: string | null, actor = this.me()): Promise<void> {
-    this.store.batch(() => this.store.move(itemId, to, actor, this.now()))
+  async moveItem(itemId: string, to: string | null, actor = this.me(), via: Via = 'notes'): Promise<void> {
+    this.store.batch(() => this.store.move(itemId, to, via, actor, this.now()))
     this.emit('change')
   }
 
   /**
-   * A set of notes: a note titled `title`, in no item, pinned to `pinTo` (if given). Its notes are the notes in it
-   * (`contains` links), however deep: the notes view draws them as a tree. Answers its id.
+   * A set of notes: a topic titled `title` that shows its notes, in no item, pinned to `pinTo` (if given). Its notes are
+   * the topics in its notes (`notes` links), however deep: the notes view draws them as a tree. Answers its id.
    */
   newNotes(title: string, pinTo: string | null, actor = this.me()): string {
     if (pinTo && !this.row(pinTo)) throw new Error(`No item ${pinTo}.`)
     return this.store.batch(() => {
-      const [id] = this.addNow(null, [{ type: 'note', params: { text: title } }], actor)
+      const [id] = this.addNow(null, [{ type: 'topic', params: { text: title, display: 'notes' } }], actor)
       if (pinTo) this.store.pin(pinTo, id, actor, this.now())
       this.emit('change')
       return id
@@ -1402,8 +1436,8 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * A note and everything in it, the notes view's tree: the note first, then each item in it, depth first, oldest
-   * first (each with its `parentId`). Only notes are walked into: anything else in a note is a leaf. At most `limit`.
+   * A topic and its notes, the notes view's tree: the topic first, then each item in its notes, depth first, oldest
+   * first (each with its `parentId`). Only topics' notes are walked into: anything else is a leaf. At most `limit`.
    */
   subtree(id: string, limit = 20_000): ItemInfo[] {
     const root = this.row(id)
@@ -1412,7 +1446,7 @@ export class Engine extends EventEmitter {
     const walk = (r: ItemRow) => {
       if (out.length >= limit) return
       out.push(this.toInfo(r))
-      if (r.type === 'note') for (const k of this.store.children(r.id)) walk(k)
+      if (r.type === 'topic') for (const k of this.store.children(r.id, 'notes')) walk(k)
     }
     walk(root)
     return out
@@ -1429,18 +1463,17 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * Closes a task: its open blockers are cancelled, then it resolves. Tasks in it are left as they are: they don't depend on it.
-   * Nor are scripts in it: like a bot, a script lasts till someone cancels it.
+   * Closes a topic (its status closed): its open blockers are cancelled. Topics in it are left as they are: they don't
+   * depend on it. Nor are scripts in it: like a bot, a script lasts till someone cancels it.
    */
-  async close(itemId: string, opts: { actor?: string; how?: 'closed' | 'cancelled' } = {}): Promise<void> {
+  async close(itemId: string, opts: { actor?: string } = {}): Promise<void> {
     const actor = opts.actor ?? this.me()
-    const shut = (id: string, how: string) => {
-      for (const b of this.children(id, true)) if (b.type !== 'task' && b.type !== 'script') this.resolve(b.id, { cancelled: true, detail: 'Its task closed.' }, actor, true)
-      this.resolve(id, { how }, actor, false)
-    }
-    const item = this.must(itemId)
-    if (item.closed) return
-    this.store.batch(() => shut(itemId, opts.how ?? 'closed'))
+    if (this.row(itemId)?.type !== 'topic') throw new Error(`No topic ${itemId}.`)
+    if (this.isClosed(itemId)) return
+    this.store.batch(() => {
+      for (const b of this.children(itemId, true)) if (b.type !== 'script') this.resolve(b.id, { cancelled: true, detail: 'Its topic closed.' }, actor, true)
+      this.store.setOpen(itemId, false, actor, this.now())
+    })
     this.emit('change')
     if (actor !== 'script') await this.idle() // a script waiting on its own queue would wait for itself
   }
@@ -1452,20 +1485,21 @@ export class Engine extends EventEmitter {
     await this.checkDue()
   }
 
-  /** Runs every script that is due, at most `scripts.max_running` (MAX_SCRIPTS) at once, those due longest first. */
+  /** Runs every script that is due (`due`, as bots are), at most `scripts.max_running` (MAX_SCRIPTS) at once, those due longest first. */
   async checkDue(): Promise<void> {
     const now = this.now()
     const open = this.store.ofType('script').filter((r) => !r.resolved)
-    for (const r of open) r.next_check_at = this.scriptDue(r)
+    for (const r of open) r.next_check_at = this.due(r.id)?.at ?? null
     const due = open.filter((r) => r.next_check_at !== null && r.next_check_at <= now && !this.checking.has(r.id)).sort((a, b) => a.next_check_at! - b.next_check_at!)
     const room = Math.max(0, Number(this.settings.get('scripts.max_running', MAX_SCRIPTS)) - this.checking.size)
     await Promise.all(due.slice(0, room).map((r) => this.runScriptItem(r.id)))
   }
 
   /**
-   * Runs a script once: its source, given the script itself (its values, state and runs), what it holds, and the tools; then
-   * what it returned. Unsafe tools only for a person's own press. A script never ends on its own: a run that throws is
-   * said in its chat (once, till the error changes) and it carries on, on its cycle. Answers the run's error, if any.
+   * Runs a script once: its source, given the script itself (its values, state and runs), the one topic it is due on (or,
+   * pressed, the first it holds), and the tools; then what it returned. Unsafe tools only for a person's own press. A
+   * script never ends on its own: a run that throws is said in its chat (once, till the error changes) and it carries on,
+   * on its cycle. Answers the run's error, if any.
    */
   private runScriptItem(id: string): Promise<string | null> {
     this.checking.add(id)
@@ -1478,14 +1512,17 @@ export class Engine extends EventEmitter {
       const author: Author = pressed ? 'human' : 'bot'
       const actor = pressed ? pressedBy! : 'script'
       const woke = this.now()
-      const { source, last_wake: _w, ...own } = row.params
+      const due = this.due(id)
+      const topic = due && (pressed || due.at <= woke) ? due.item : pressed ? (this.assignedTo(id)[0] ?? null) : null
+      if (topic) this.setMark(id, topic, { n: this.store.moment(), at: woke })
+      const { source, last_wake: _w, last_seen: _s, ...own } = row.params
       const context = {
         ...own,
         id,
         name: own.name ?? own.description ?? null,
         runs: row.runs,
         state: row.memo ?? null,
-        topics: this.assignedTo(id).map((t) => ({ id: t, title: this.get(t)?.title ?? t })),
+        topics: topic ? [{ id: topic, title: this.get(topic)?.title ?? topic }] : [],
         now: new Date(woke).toISOString(),
         trigger: pressed ? 'press' : 'wake',
       }
@@ -1495,7 +1532,7 @@ export class Engine extends EventEmitter {
         const parsed = scriptResult.safeParse(ran.value)
         if (!parsed.success) throw new Error(`It returned ${JSON.stringify(ran.value)?.slice(0, 200)}, not { messages?, assign?, state? }.`)
         const r = parsed.data ?? {}
-        for (const m of r.messages ?? []) await this.addItems(m.item ?? row.parent_id ?? id, [{ type: 'note', params: { text: m.text } }], 'script', author)
+        for (const m of r.messages ?? []) await this.addItems(m.item ?? row.parent_id ?? id, [{ type: 'topic', params: { text: m.text } }], 'script', author)
         for (const a of r.assign ?? []) {
           const to = new Set(a.to.map((x) => (x === id ? x : this.resolveAssignee(x))))
           const now = this.assignees(a.item)
@@ -1508,10 +1545,9 @@ export class Engine extends EventEmitter {
       }
       row.runs++
       // By `script`, so saying it is not something happening to it (which would wake it again).
-      if (error && error !== row.last_error) await this.addItems(row.parent_id ?? id, [{ type: 'note', params: { text: `${this.title(id, row.params)} failed: ${error}` } }], 'script', author)
+      if (error && error !== row.last_error) await this.addItems(row.parent_id ?? id, [{ type: 'topic', params: { text: `${this.title(id, row.params)} failed: ${error}` } }], 'script', author)
       row.last_error = error
-      this.store.setParams(id, { ...row.params, last_wake: woke }, 'script', this.now())
-      row.next_check_at = this.scriptDue(row)
+      row.next_check_at = this.due(id)?.at ?? null
       this.emit('change')
       return error
     }).finally(() => this.checking.delete(id))

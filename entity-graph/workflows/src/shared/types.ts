@@ -9,7 +9,7 @@ import type { SearchRow, SearchSection } from './search'
  * which stay open until something happens (a script says it is done, an approval
  * is given, a child item closes).
  */
-export type ItemKind = 'task' | 'note' | 'approval' | 'script' | 'process' | 'link' | 'widget' | 'search' | 'slack_message' | 'slack_channel' | 'file' | 'bot' | 'user'
+export type ItemKind = 'topic' | 'approval' | 'script' | 'link' | 'search' | 'slack_message' | 'slack_channel' | 'file' | 'bot' | 'user'
 
 /** An item as it is added. `ref` names it, so another added alongside can point at it. */
 export interface ItemSpec {
@@ -29,6 +29,10 @@ export interface ItemInfo {
   id: string
   /** The item it sits in; null only for an item that sits in none. */
   parentId: string | null
+  /** The link it sits in its parent by: its comments (the chat) or its notes (the tree); null in none. */
+  via: 'comments' | 'notes' | null
+  /** Who owns it (an `owns` link to it): who it goes back to. Null for nobody. */
+  owner: string | null
   type: ItemKind
   /** What it was given, as its type's params schema says. */
   params: Record<string, unknown>
@@ -68,20 +72,23 @@ export interface ItemInfo {
   pinnedIn: string[]
 }
 
-/** A task (or a bot, for its own chat), as the lists and its view read it. */
+/** A topic (or any other item someone has: a bot, for its own chat), as the lists and its view read it. */
 export interface Item {
   id: string
+  type: ItemKind
   title: string
-  /** The item it sits in, if any. It blocks that item until it closes. */
+  /** The item it sits in, if any. */
   parentId: string | null
+  /** Its status: open (true), closed (false), or none (null: a comment, a note). Anything but a topic: open while it lasts. */
+  open: boolean | null
   closed: boolean
-  /** How it closed: 'closed' or 'cancelled'. */
-  how: string | null
+  /** Who owns it: who it goes back to when a bot lets go of it. */
+  owner: string | null
   /** Its open children, oldest first. */
   blockers: ItemInfo[]
   /**
    * Who it is assigned to: people (their usernames) and bots (their ids), the earliest assigned first. These are
-   * `assigned_to` links from the item, not items in it.
+   * `assignees` links from the item, not items in it.
    */
   assignees: string[]
   /** Open, assigned to the person looking, and blocked by nothing but people's own approvals: it is their turn. */
@@ -98,7 +105,7 @@ export interface ItemDetail {
   item: Item
   /** The item it sits in, if any. */
   parent: { id: string; title: string } | null
-  /** Its children, oldest first: every item in it, child items included. */
+  /** Its comments, oldest first: what is said in it, topics in it included. */
   children: ItemInfo[]
 }
 
@@ -127,9 +134,7 @@ export interface Agent {
   provider: string
   /** The model, as the provider names it (for Claude: opus, sonnet, haiku or a full id). */
   model: string
-  /** How long it waits after the last thing that happened in its items before it wakes, so a burst of work goes in one run. */
-  debounceMinutes: number
-  /** How often it wakes while it has tasks, news or not; 0, never. */
+  /** How long before it runs on an item again that it still holds (and that was not given to it again since). */
   cycleMinutes: number
   /** Where it runs: its own folder, which lasts, so it can keep repositories there. */
   folder: string
@@ -142,7 +147,7 @@ export interface Agent {
   deleted: boolean
   /** The run going now, if any. */
   runId: string | null
-  /** When it wakes next, if something new is waiting for it (it may already be due). */
+  /** When it runs next, on the first item it holds that is due (it may already be due); null with none. */
   wakesAt: number | null
   /** Until when its provider waits out a usage limit: it runs nothing till then. */
   pausedUntil: number | null
@@ -373,7 +378,8 @@ export interface WorkflowsAPI {
   /** The edit log: what was done, by whom and when, the newest first. */
   editLog: (query: LogQuery) => Promise<LogEntry[]>
   /** Adds items in a task, as the person signed in: what the chat input's default actions do. */
-  addItems: (itemId: string, specs: ItemSpec[]) => Promise<string[]>
+  /** Adds items in an item: in its comments, or (`via` notes) in its notes. */
+  addItems: (itemId: string, specs: ItemSpec[], via?: 'comments' | 'notes') => Promise<string[]>
   /** Keeps a file (its bytes, base64) with the source, as a file item in the task: answers its id. */
   uploadFile: (itemId: string, name: string, base64: string) => Promise<string>
   /** A file item's bytes (base64), name and type. */
@@ -390,19 +396,18 @@ export interface WorkflowsAPI {
   runSearchSection: (section: SearchSection, text: string) => Promise<SearchRow[]>
   /** Runs a tool (any action: the same registry as the MCP and a script's tools) as the person, from a task's `/`: what it answered is a note in the task. */
   runTool: (itemId: string, name: string, args: Record<string, unknown>) => Promise<unknown>
-  /** Puts items in a task as well as where they sit (`contains` links): an item can be in many. */
   /** Pins items to an item, or (with `on` false) unpins them. */
   pin: (itemId: string, itemIds: string[], on: boolean) => Promise<void>
-  /** Sets one value on an item (null clears it): a note's text, `section` or `open`. */
+  /** Sets one value on an item (null clears it): a topic's text, `section`, `open` (its status) or `display`. */
   setValue: (itemId: string, key: string, value: unknown) => Promise<void>
-  /** Moves an item into another (null: into none). */
+  /** Moves an item into another's notes (null: into none). */
   moveItem: (itemId: string, to: string | null) => Promise<void>
-  /** Makes a set of notes: a note titled so, in no item, pinned to `pinTo`. Answers its id. */
+  /** Makes a set of notes: a topic titled so that shows its notes, in no item, pinned to `pinTo`. Answers its id. */
   newNotes: (title: string, pinTo: string | null) => Promise<string>
-  /** A note and everything in it, depth first (only notes are walked into): the notes view's tree. */
+  /** A topic and its notes, depth first (only topics' notes are walked into): the notes view's tree. */
   subtree: (itemId: string) => Promise<ItemInfo[]>
-  /** Changes a widget's state. */
-  setWidgetState: (itemId: string, state: unknown) => Promise<void>
+  /** Gives an item to an owner (a username or a bot), or to nobody (null). */
+  setOwner: (itemId: string, owner: string | null) => Promise<void>
   /** Turns the person's thumbs-up on an item on or off. */
   react: (itemId: string, on: boolean) => Promise<void>
   customActions: () => Promise<CustomAction[]>
@@ -415,7 +420,7 @@ export interface WorkflowsAPI {
   /** Renames an item: its title changes (egdb keeps the old one). */
   rename: (id: string, title: string) => Promise<void>
   /** Makes a bot (no id) or changes its settings. */
-  saveBot: (bot: { id?: string; name: string; instructions: string; provider: string; model: string; debounceMinutes: number; cycleMinutes?: number; folder?: string }) => Promise<string>
+  saveBot: (bot: { id?: string; name: string; instructions: string; provider: string; model: string; cycleMinutes?: number; folder?: string }) => Promise<string>
   /** Deletes a bot: what it was assigned goes back to the human. */
   deleteBot: (id: string) => Promise<void>
   /** Assigns an item to a person or a bot (on), or takes the assignment away (off). */
@@ -533,7 +538,7 @@ export interface CustomAction {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'searchSections', 'setSearchSections', 'runSearchSection', 'setWidgetState', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'approve', 'cancel', 'runNow', 'close', 'reopen', 'react', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'moveItem', 'newNotes', 'subtree', 'searchSections', 'setSearchSections', 'runSearchSection', 'setOwner', 'editLog',
   'customActions', 'saveCustomAction', 'removeCustomAction', 'runCustomAction', 'generateCustomAction', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',

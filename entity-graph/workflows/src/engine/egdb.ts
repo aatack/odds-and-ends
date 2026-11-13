@@ -8,14 +8,16 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { EgdbClient, type Filter, type Op } from 'egdb-client'
 import {
-  customActionFromValues, itemFromValues, ROOT, Store, type CustomActionRow, type ItemRow, type Inspection, type LinkView, type Sink,
+  customActionFromValues, itemFromValues, legacyValues, ROOT, Store, type CustomActionRow, type ItemRow, type Inspection, type LinkView, type Sink, type Via,
 } from './store'
 
 const BRANCH_NAME = 'workflows'
 /** The kinds of entity that are not items. */
 const OWN_TYPES = ['wf.root', 'wf.setting', 'wf.custom_action']
-/** The links an item may have, as the loader and the debug view read them. */
-const LINK_TYPES = ['contains', 'pins', 'assigned_to'] as const
+/** The links an item may have, as the loader and the debug view read them (`contains` and `assigned_to`: an older build's). */
+const LINK_TYPES = ['comments', 'notes', 'pins', 'assignees', 'owns', 'contains', 'assigned_to'] as const
+/** The setting that says up to when an older build's links have been read into this build's (`migrate`). */
+const MIGRATED = 'migration.links_until'
 /** Bytes per write, about: egdb-server takes requests of 2 MB at most, so a big change goes in several. */
 const MAX_BYTES = 1_000_000
 
@@ -129,8 +131,7 @@ export class EgdbSink implements Sink {
         by: l.event?.author ?? null,
       })),
     )
-    const made = links.find((l) => l.type === 'contains' && l.direction === 'inbound')
-    return { id, values, set, links, createdAt: made?.at ?? null, createdBy: made?.by ?? null }
+    return { id, values, set, links, createdAt: set.type?.at ?? null, createdBy: set.type?.by ?? null }
   }
 }
 
@@ -144,24 +145,37 @@ async function findAll(client: EgdbClient, branch: string, filter: Filter, each:
   } while (cursor)
 }
 
+interface Placed {
+  parent: string
+  via: Via
+  seq: number
+  at: number
+  by: string
+}
+
 /**
- * A store read back from egdb, which writes its changes there from now on.
- * `blocking(type)` says which items are blockers (resolved only once they say
- * so); the rest resolved as they were made. A source written by an earlier
- * build (its items' params in one value) is refused: start a new one.
+ * A store read back from egdb, which writes its changes there from now on. `blocking(type)` says which items are
+ * blockers (resolved only once they say so); the rest resolved as they were made. A source written by an earlier build
+ * (its items' params in one value) is refused: start a new one.
+ *
+ * An older build's links are read into this build's as it loads, by adding links and never rewriting any (so the older
+ * build reads the source as it was; see `migrate`).
  */
 export async function loadStore(
   client: EgdbClient,
   blocking: (type: string) => boolean,
   onError?: (message: string) => void,
+  /** Whether an item type is known: what is not (a type since removed) is left out. */
+  known: (type: string) => boolean = () => true,
+  now: () => number = Date.now,
 ): Promise<{ store: Store; sink: EgdbSink }> {
   const branch = await storeBranch(client)
-  const found = new Map<string, Record<string, unknown>>()
+  const stored = new Map<string, Record<string, unknown>>()
   const settings: [string, unknown][] = []
   const customActions: CustomActionRow[] = []
   await findAll(client, branch, { and: [{ not_null: { key: 'type' } }, { not: { in: { key: 'type', values: OWN_TYPES } } }] }, (id, x) => {
     if ('params' in x && 'created_by' in x) throw new Error('This source was made by an earlier build of the app, which kept items differently: start a new source.')
-    found.set(id, x)
+    stored.set(id, x)
   })
   await findAll(client, branch, { eq: { key: 'type', value: 'wf.setting' } }, (_id, x) => {
     try {
@@ -171,51 +185,148 @@ export async function loadStore(
     }
   })
   await findAll(client, branch, { eq: { key: 'type', value: 'wf.custom_action' } }, (_id, x) => customActions.push(customActionFromValues(x)))
-  // Where each item sits, and who made it when: the `contains` links to it. And who has each task: `assigned_to` links.
-  // An item sits in the task whose `contains` link to it came first; any later ones (an older build's) read as pins.
-  // What is pinned to each item: its `pins` links.
-  const made = new Map<string, { parent: string | null; seq: number; at: number; by: string }>()
-  const pinned: { from: string; id: string; at: number; by: string; via: 'pins' | 'contains' }[] = []
+  const sink = new EgdbSink(client, branch, onError)
+  const at = now()
+  const migratedUntil = Number(settings.find(([k]) => k === MIGRATED)?.[1] ?? 0)
+
+  // Every link from an item (or the root): where each item sits, what is pinned to it, who has it and who owns it; and
+  // an older build's links, newer than the last time they were read in.
+  const placed = new Map<string, Placed>()
+  const pinned: { from: string; id: string; at: number; by: string }[] = []
   const assigned: { item: string; to: string; at: number; by: string }[] = []
-  const ids = [ROOT, ...found.keys()]
+  const owners: { item: string; owner: string; at: number; by: string }[] = []
+  const old = { contains: new Map<string, (Placed & { sort: number })[]>(), assigned: [] as { item: string; to: string; at: number; by: string }[] }
+  const ids = [ROOT, ...stored.keys()]
   for (let i = 0; i < ids.length; i += 500) {
-    const got = await client.links(branch, ids.slice(i, i + 500), [['contains', 'outbound'], ['pins', 'outbound'], ['assigned_to', 'outbound']])
+    const got = await client.links(branch, ids.slice(i, i + 500), LINK_TYPES.map((t) => [t, 'outbound'] as [string, 'outbound']))
     for (const groups of Object.values(got))
       for (const g of groups)
         for (const l of g.links) {
           const meta = { at: l.event?.timestamp ?? 0, by: l.event?.author ?? 'system' }
-          if (g.link_type === 'contains') {
-            const m = { parent: l.source === ROOT ? null : l.source, seq: Number(l.sort ?? 0), ...meta }
-            const had = made.get(l.destination)
-            // The first by time; at the same time, the one made in place (a seq, not a link's time as its sort).
-            if (had && (had.at < m.at || (had.at === m.at && had.seq <= m.seq))) pinned.push({ from: l.source, id: l.destination, at: m.at, by: m.by, via: 'contains' })
-            else {
-              if (had?.parent) pinned.push({ from: had.parent, id: l.destination, at: had.at, by: had.by, via: 'contains' })
-              made.set(l.destination, m)
-            }
-          }
-          else if (g.link_type === 'pins') pinned.push({ from: l.source, id: l.destination, ...meta, via: 'pins' })
-          else assigned.push({ item: l.source, to: l.destination, ...meta })
+          // Assignments, pins and ownership are sorted by when they were made: that is their time (a write's own time can't go back).
+          const when = typeof l.sort === 'number' ? l.sort : meta.at
+          if (g.link_type === 'comments' || g.link_type === 'notes') {
+            const p = { parent: l.source, via: g.link_type as Via, seq: Number(l.sort ?? 0), ...meta }
+            const had = placed.get(l.destination)
+            if (!had || had.at > p.at) placed.set(l.destination, p)
+          } else if (g.link_type === 'pins') pinned.push({ from: l.source, id: l.destination, at: when, by: meta.by })
+          else if (g.link_type === 'assignees') assigned.push({ item: l.source, to: l.destination, at: when, by: meta.by })
+          else if (g.link_type === 'owns') owners.push({ item: l.destination, owner: l.source, at: when, by: meta.by })
+          else if (meta.at > migratedUntil && g.link_type === 'contains') {
+            const list = old.contains.get(l.destination) ?? []
+            list.push({ parent: l.source, via: 'comments', seq: Number(l.sort ?? 0), sort: Number(l.sort ?? 0), ...meta })
+            old.contains.set(l.destination, list)
+          } else if (meta.at > migratedUntil && g.link_type === 'assigned_to') old.assigned.push({ item: l.source, to: l.destination, at: when, by: meta.by })
         }
   }
-  // When each resolved blocker resolved, and by whom: the item that set its `resolved` true.
+  const migrating = old.contains.size > 0 || old.assigned.length > 0
+  if (migrating) migrate({ stored, placed, pinned, assigned, owners, old, sink, at })
+
+  // Who made each item, and when: who set its `type`. When each closed blocker or topic closed, and by whom: who set
+  // its `resolved` true (or a topic's `open` false).
+  const made = new Map<string, { at: number; by: string }>()
   const resolved = new Map<string, { at: number; by: string }>()
-  const done = [...found].filter(([, x]) => x.resolved === true).map(([id]) => id)
-  for (let i = 0; i < done.length; i += 500) {
-    const got = await client.valueEvents(branch, done.slice(i, i + 500))
-    for (const [id, keys] of Object.entries(got)) if (keys.resolved) resolved.set(id, { at: keys.resolved.timestamp, by: keys.resolved.author })
+  const all = [...stored.keys()]
+  for (let i = 0; i < all.length; i += 500) {
+    const got = await client.valueEvents(branch, all.slice(i, i + 500))
+    for (const [id, keys] of Object.entries(got)) {
+      if (keys.type) made.set(id, { at: keys.type.timestamp, by: keys.type.author })
+      const x = stored.get(id)!
+      const closer = x.open === false ? keys.open : x.resolved === true ? keys.resolved : undefined
+      if (closer) resolved.set(id, { at: closer.timestamp, by: closer.author })
+    }
   }
   const rows: ItemRow[] = []
-  for (const [id, x] of found) {
-    const m = made.get(id)
-    if (m) rows.push(itemFromValues(id, x, m, blocking(String(x.type)), resolved.get(id)))
+  for (const [id, raw] of stored) {
+    const x = legacyValues(raw)
+    if (!known(String(x.type))) continue
+    const p = placed.get(id)
+    const m = made.get(id) ?? { at: p?.at ?? 0, by: p?.by ?? 'system' }
+    rows.push(itemFromValues(id, x, { parent: p && stored.has(p.parent) ? p.parent : null, via: p?.via ?? null, seq: p?.seq ?? 0, at: m.at, by: m.by }, blocking(String(x.type)), resolved.get(id)))
   }
-  const sink = new EgdbSink(client, branch, onError)
   const store = new Store(sink)
-  store.restore({ items: rows, settings, customActions, assigned, pinned: pinned.filter((p) => p.from !== ROOT && found.has(p.from) && found.has(p.id)) })
-  // The root is an entity too, so that the tree can be walked from it.
-  if (!rows.length) sink.write([{ set: { entity: ROOT, key: 'type', value: 'wf.root' } }], 'system', Date.now())
+  const kept = new Set(rows.map((r) => r.id))
+  store.restore({
+    items: rows,
+    settings,
+    customActions,
+    assigned: assigned.filter((a) => kept.has(a.item)),
+    pinned: pinned.filter((p) => kept.has(p.from) && kept.has(p.id)),
+    owners: owners.filter((o) => kept.has(o.item)),
+  })
+  // Read in up to now: the next load reads only what an older build adds after this.
+  if (migrating) store.setSetting(MIGRATED, at)
   return { store, sink }
+}
+
+/**
+ * Reads an older build's links into this build's, adding links and rewriting nothing: an item an older build put in a
+ * task (its first `contains` link) is put in its comments, or in its notes if the parent was a note; a later `contains`
+ * (an older build's pin) is a pin; an `assigned_to` link is an `assignees` link; and each topic, bot and script the older
+ * build made is owned by its owner as that build saw it (whoever made it if a person, else the owner of what it sits in,
+ * else the owner of the bot that made it). Each link is written as whoever wrote the original, sorted by its time.
+ */
+function migrate(m: {
+  stored: Map<string, Record<string, unknown>>
+  placed: Map<string, Placed>
+  pinned: { from: string; id: string; at: number; by: string }[]
+  assigned: { item: string; to: string; at: number; by: string }[]
+  owners: { item: string; owner: string; at: number; by: string }[]
+  old: { contains: Map<string, (Placed & { sort: number })[]>; assigned: { item: string; to: string; at: number; by: string }[] }
+  sink: EgdbSink
+  at: number
+}): void {
+  const { stored, placed, pinned, assigned, owners, old, sink, at } = m
+  const ops = new Map<string, Op[]>()
+  const write = (by: string, op: Op) => ops.set(by, [...(ops.get(by) ?? []), op])
+  const typeOf = (id: string) => String(stored.get(id)?.type ?? '')
+  const pins = new Set(pinned.map((p) => `${p.from} ${p.id}`))
+  const given = new Set(assigned.map((a) => `${a.item} ${a.to}`))
+  const ownerMap = new Map(owners.map((o) => [o.item, o.owner]))
+  const isPerson = (id: string) => typeOf(id) === 'user'
+  const made = new Map<string, { parent: string | null; at: number; by: string }>()
+  for (const [id, links] of old.contains) {
+    if (!stored.has(id)) continue
+    const [first, ...later] = [...links].sort((a, b) => a.at - b.at || a.seq - b.seq)
+    made.set(id, { parent: first.parent === ROOT ? null : first.parent, at: first.at, by: first.by })
+    if (!placed.has(id) && first.parent !== ROOT && stored.has(first.parent)) {
+      const via: Via = typeOf(first.parent) === 'note' ? 'notes' : 'comments'
+      placed.set(id, { parent: first.parent, via, seq: first.seq, at: first.at, by: first.by })
+      write(first.by, { link: { source: first.parent, destination: id, link_type: via, sort: { explicit: first.seq } } })
+    }
+    for (const p of later)
+      if (p.parent !== ROOT && stored.has(p.parent) && !pins.has(`${p.parent} ${id}`)) {
+        pins.add(`${p.parent} ${id}`)
+        pinned.push({ from: p.parent, id, at: p.at, by: p.by })
+        write(p.by, { link: { source: p.parent, destination: id, link_type: 'pins', sort: { explicit: p.at } } })
+      }
+  }
+  for (const a of old.assigned) {
+    if (!stored.has(a.item) || given.has(`${a.item} ${a.to}`)) continue
+    given.add(`${a.item} ${a.to}`)
+    assigned.push(a)
+    write(a.by, { link: { source: a.item, destination: a.to, link_type: 'assignees', sort: { explicit: a.at } } })
+  }
+  // Owners, as the older build worked them out.
+  const ownerOf = (id: string, depth = 0): string | null => {
+    const own = ownerMap.get(id)
+    if (own) return own
+    const mk = made.get(id)
+    if (!mk || depth > 50) return null
+    if (isPerson(mk.by)) return mk.by
+    if (mk.parent) return ownerOf(mk.parent, depth + 1)
+    const bot = /^bot:(.+)$/.exec(mk.by)?.[1]
+    return bot ? ownerOf(bot, depth + 1) : null
+  }
+  for (const id of made.keys()) {
+    if (ownerMap.has(id) || !['task', 'note', 'bot', 'script'].includes(typeOf(id))) continue
+    const owner = ownerOf(id)
+    if (!owner) continue
+    owners.push({ item: id, owner, at: made.get(id)!.at, by: 'system' })
+    ownerMap.set(id, owner)
+    write('system', { link: { source: owner, destination: id, link_type: 'owns', sort: { explicit: made.get(id)!.at } } })
+  }
+  for (const [by, list] of ops) sink.write(list, by, at)
 }
 
 /** Where to find an egdb-server binary: EGDB_SERVER, else the repository's release build, else the PATH. */
@@ -262,11 +373,11 @@ export function startEgdb(file: string, token: string, bin = egdbServerPath()): 
 }
 
 /** An egdb-server on `file`, and the store in it. */
-export async function openStore(file: string, token: string, blocking: (type: string) => boolean, onError?: (message: string) => void) {
+export async function openStore(file: string, token: string, blocking: (type: string) => boolean, onError?: (message: string) => void, known?: (type: string) => boolean) {
   const egdb = await startEgdb(file, token)
   const client = new EgdbClient({ url: egdb.url, token })
   try {
-    const { store, sink } = await loadStore(client, blocking, onError)
+    const { store, sink } = await loadStore(client, blocking, onError, known)
     return { store, sink, client, egdb }
   } catch (e) {
     egdb.stop()

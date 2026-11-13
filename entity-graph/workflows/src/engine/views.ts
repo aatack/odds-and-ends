@@ -5,7 +5,7 @@
 // values. An avatar has no text.
 
 import type { ItemInfo } from '../shared/types'
-import { FOCUS, pillLabel } from '../shared/views'
+import { focusKind, pillLabel } from '../shared/views'
 
 export type Size = 'pill' | 'card' | 'focus'
 
@@ -17,10 +17,11 @@ export interface Who {
 
 export const ANYONE: Who = { name: (a) => a, person: (a) => a === 'human' || a === 'mcp' }
 
-/** What the sizes read: an item, and what is in it, oldest first. The engine is one. */
+/** What the sizes read: an item, its comments and its notes, oldest first. The engine is one. */
 export interface Reader {
   info(id: string): ItemInfo | null
   children(id: string): ItemInfo[]
+  notes(id: string): ItemInfo[]
 }
 
 /** How many lines a focus is cut to, with what was cut said and the id to ask for the rest. */
@@ -29,9 +30,14 @@ export const FOCUS_LIMIT = 100
 /** Inline, as `[id]()` is drawn: its type (the pill's icon), its name, and its id. */
 export const pillText = (i: ItemInfo): string => `[${i.type}] ${pillLabel(i)} (${i.id})`
 
-/** In a chat: what a person wrote, as they wrote it, after their name; anything else in square brackets. */
+/**
+ * In a chat: what a person wrote, as they wrote it, after their name; anything else in square brackets. A topic with a
+ * status (a thing to be done) says so, by its first line and id.
+ */
 export function cardText(e: ItemInfo, who: Who = ANYONE): string {
-  if (e.type === 'note')
+  if (e.type === 'topic' && typeof e.params.open === 'boolean')
+    return `[${e.params.open ? 'open' : 'closed'} topic by ${who.name(e.createdBy)}: ${pillLabel(e)} (${e.id})]`
+  if (e.type === 'topic')
     return who.person(e.createdBy) ? `${who.name(e.createdBy)}: ${e.params.text ?? ''}` : `[${who.name(e.createdBy)}: ${e.params.text ?? ''}]`
   if (e.cancelled) return `[${e.message ?? `Cancelled: ${e.summary}`}]`
   if (!e.resolved) return `[${e.type} added by ${who.name(e.createdBy)}: ${e.summary}]`
@@ -50,21 +56,21 @@ export function focusText(read: Reader, id: string, who: Who = ANYONE, limit = F
   const info = read.info(id)
   if (!info) return null
   const body: string[] = []
-  const kind = FOCUS[info.type]
+  const kind = focusKind(info)
   if (kind === 'notes') {
-    // Depth first, oldest first, walking into notes only; what doesn't fit is said, with the note to ask for.
-    const count = (i: ItemInfo): number => 1 + (i.type === 'note' ? read.children(i.id).reduce((n, k) => n + count(k), 0) : 0)
+    // Depth first, oldest first, walking into topics' notes only; what doesn't fit is said, with the topic to ask for.
+    const count = (i: ItemInfo): number => 1 + (i.type === 'topic' ? read.notes(i.id).reduce((n, k) => n + count(k), 0) : 0)
     const cut: string[] = []
     const walk = (parent: string, depth: number) => {
-      const kids = read.children(parent)
+      const kids = read.notes(parent)
       for (let n = 0; n < kids.length; n++) {
         if (body.length >= limit) {
           cut.push(`... ${kids.slice(n).reduce((m, k) => m + count(k), 0)} more under ${parent}: get_item it for the rest`)
           return
         }
         const k = kids[n]
-        body.push(`${'  '.repeat(depth)}- ${k.type === 'note' ? noteRow(k) : pillText(k)}`)
-        if (k.type === 'note') walk(k.id, depth + 1)
+        body.push(`${'  '.repeat(depth)}- ${k.type === 'topic' ? noteRow(k) : pillText(k)}`)
+        if (k.type === 'topic') walk(k.id, depth + 1)
       }
     }
     walk(id, 0)

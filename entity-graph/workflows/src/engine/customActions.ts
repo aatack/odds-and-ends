@@ -77,7 +77,7 @@ export class CustomActions {
     if (!info) throw new Error(`No item ${itemId}.`)
     if (info.type !== action.type) throw new Error(`${action.name} is for ${action.type} items, not ${info.type}.`)
     if (!action.source.trim()) throw new Error(`${action.name} has no code yet: write or generate it on the Types page.`)
-    const taskId = info.type === 'task' ? info.id : info.parentId
+    const taskId = info.type === 'topic' ? info.id : info.parentId
     const item = taskId ? this.engine.get(taskId) : null
     if (!item) throw new Error('That item is in no item.')
     const context = {
@@ -96,7 +96,7 @@ export class CustomActions {
     // Its items are held to the bots' rules, and checked before anything is added.
     this.engine.prepare(specs, 'bot')
     // What it said is a note in the task, by the script; what it returned, a bot's (held to the bots' rules).
-    if (message) await this.engine.addItems(item.id, [{ type: 'note', params: { text: message } }], 'script', 'human')
+    if (message) await this.engine.addItems(item.id, [{ type: 'topic', params: { text: message } }], 'script', 'human')
     if (specs.length) await this.engine.addItems(item.id, specs, actor, 'bot')
     return { message }
   }

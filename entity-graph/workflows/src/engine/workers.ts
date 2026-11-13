@@ -1,11 +1,11 @@
 // The bots' runner. Each bot (an `agent` item) runs one thing at a time, in a
 // Claude session of its own and a folder of its own, both of which last: so a
 // bot remembers its work, and keeps its repositories, from one run to the next.
-// A bot wakes when something happens to it (an item is assigned to it, its
-// settings change), and every 15 minutes while something has happened in its
-// items (Engine.wake), once its debounce has passed; a run is told what is new
-// in each item it has, and answers with an update for each as structured
-// output, which `Engine.endRun` takes from there.
+// Every minute (and as things change), each bot not running is run on the
+// first item assigned to it that is due (Engine.due: one it has not run on in
+// its cycle, or that was given to it again since); a run is told what is new in
+// that item, and answers with an update as structured output, which
+// `Engine.endRun` takes from there.
 
 import { spawn } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -48,9 +48,9 @@ const RUN_LIMIT_MS = 60 * 60_000
 export const SYSTEM = `You are a bot in the operator's workflow app: a name, your own instructions (below), and a Claude session and working folder that last between runs. The "workflows" MCP server is the app.
 
 1. Read the topics assigned to you, and their history, to decide how to handle them.
-2. Act on them, then assign each to the person, bot or script needed to progress it (yourself, if that's you). Topics you keep wake you every 15 minutes.
+2. Act on them, then assign each to the person, bot or script needed to progress it (yourself, if that's you). A topic you keep comes back to you every 30 minutes.
 3. Keep traceability: put results in the topic they belong to, pin what will be useful later to the topic it is useful in (a subtask, a pull request or preview link, a file, what a new topic came from: the pin tool, or pin: true in add_items), and reference context by id ([id]()) rather than duplicating it.
-4. Everything you want seen goes in a topic: your update's message is a note there (in your own chat, an update for your own id); add_items adds anything else.
+4. Everything you want seen goes in a topic: your update's message is a comment there (in your own chat, an update for your own id); add_items adds anything else.
 5. Ask a person only what nobody else can answer, in one direct question.
 6. Repetitive or waiting work that needs no LLM goes to a script (see item_types).
 7. Never do anything unsafe (posting, merging, sending, pushing to shared branches), with tools or the shell; ask a person in a note. Local branches are fine.
@@ -126,7 +126,7 @@ export const PROVIDERS: Record<string, SpawnBot> = { claude: spawnClaude }
 const ID_EVERY = 10
 
 /** What every run's prompt starts with. */
-export const ASK = '[Please action your assigned tasks, and give each a new assignee to carry it on.]'
+export const ASK = '[Please action this topic, assigned to you, and give it a new assignee to carry it on.]'
 
 /**
  * A run's prompt: the ask, then for each item the bot has (and its own chat,
@@ -143,9 +143,9 @@ export function promptFor(items: PromptItem[], who?: Who): string {
         ...pins.map((p) => `[pinned here: ${p.text}]`),
         ...children.map((e) => cardText(e, who)),
       ]
-      const head = own ? ['[your own chat: reply with an update for this id]'] : first ? [`[new to you: ${item.title}]`] : [`[task: ${item.title}]`]
+      const head = own ? ['[your own chat: reply with an update for this id]'] : first ? [`[new to you: ${item.title}]`] : [`[topic: ${item.title}]`]
       const all = [...head, ...(lines.length ? lines : ['[nothing new]'])]
-      return all.flatMap((l, i) => (i % ID_EVERY === 0 ? [`[current task ID: ${item.id}]`, l] : [l])).join('\n\n')
+      return all.flatMap((l, i) => (i % ID_EVERY === 0 ? [`[current topic ID: ${item.id}]`, l] : [l])).join('\n\n')
     })
     .join('\n\n---\n\n')
 }
@@ -183,7 +183,7 @@ export class BotRunner {
     engine.onCancel = (agentId) => this.running.get(agentId)?.kill()
   }
 
-  /** Looks for bots that are due every second (debounces come due on their own), until `stop`. */
+  /** Looks for bots that are due every second (a held item's cycle comes due on its own), until `stop`. */
   start(): void {
     this.ticker ??= setInterval(() => this.fill(), 1000)
     this.fill()
