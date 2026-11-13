@@ -162,7 +162,7 @@ function current(): NotesTree {
 function placeholder(id: string, parent: string, params: Record<string, unknown>): ItemInfo {
   const now = Date.now()
   return {
-    id, parentId: parent, via: 'notes', owner: null, type: 'topic', params, createdBy: '', createdAt: now, resolved: true, resolvedAt: now, resolvedBy: null,
+    id, parentId: parent, via: 'notes', owner: null, type: 'topic', params, createdBy: '', createdAt: now, resolved: true, closed: params.open === false, resolvedAt: now, resolvedBy: null,
     cancelled: false, data: null, actor: '', summary: String(params.text ?? ''), message: null, nextCheckAt: null, lastError: null,
     runs: 0, reactions: [], pins: [], pinnedIn: [],
   }

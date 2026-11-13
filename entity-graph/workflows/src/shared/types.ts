@@ -44,6 +44,8 @@ export interface ItemInfo {
 
   /** It has happened (or was cancelled; for an item, closed). A plain item is resolved as it is added. */
   resolved: boolean
+  /** Closed: its status closed (anything can be), or a blocker resolved. Closed, it has no owner nor assignees. */
+  closed: boolean
   /** When, known for what resolved since the app started: egdb's history of `resolved` has the rest. */
   resolvedAt: number | null
   /** Who resolved it: the human (approving), a bot (its run ending), 'system' (a check), or as createdBy for a plain item. */

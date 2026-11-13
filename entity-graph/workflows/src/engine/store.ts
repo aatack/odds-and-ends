@@ -285,7 +285,7 @@ export class Store {
   }
 
   /**
-   * A topic's status: open (true), closed (false) or none (null), as its `open` value. Closed, it reads as resolved:
+   * An item's status: open (true), closed (false) or none (null), as its `open` value. A topic closed reads as resolved:
    * when, and by whom, are kept (egdb keeps them too, as the event for `open`).
    */
   setOpen(id: string, open: boolean | null, by: string, at: number): void {
@@ -294,7 +294,8 @@ export class Store {
     const { open: _o, ...rest } = row.params
     row.params = open === null ? rest : { ...rest, open }
     const closed = open === false
-    if (closed !== row.resolved) Object.assign(row, { resolved: closed, resolved_at: closed ? at : null, resolved_by: closed ? by : null, resolved_n: closed ? this.moment() : 0 })
+    // A topic closed reads as resolved; anything else keeps what `resolved` says of it (a plain item is resolved as it is added).
+    if (row.type === 'topic' && closed !== row.resolved) Object.assign(row, { resolved: closed, resolved_at: closed ? at : null, resolved_by: closed ? by : null, resolved_n: closed ? this.moment() : 0 })
     this.out([set(id, 'open', open)], by, at)
   }
 

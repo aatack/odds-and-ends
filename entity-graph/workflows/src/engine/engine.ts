@@ -23,7 +23,7 @@ import { viewText, type Size, type Who } from './views'
 import { focusKind } from '../shared/views'
 
 /** What the app keeps on items for itself: never set by `setValue`. */
-const OWN_KEYS = new Set(['session_id', 'seen', 'last_run', 'last_wake', 'last_seen', 'handoff', 'key'])
+const OWN_KEYS = new Set(['session_id', 'seen', 'last_run', 'last_wake', 'last_seen', 'handoff', 'key', 'last_owner', 'last_assignees'])
 
 const MINUTE = 60_000
 /** A bot's model, unless it says another. */
@@ -232,6 +232,7 @@ export class Engine extends EventEmitter {
       createdBy: r.created_by,
       createdAt: r.created_at,
       resolved: r.resolved,
+      closed: this.isClosed(r.id),
       resolvedAt: r.resolved_at,
       resolvedBy: r.resolved_by,
       cancelled: r.cancelled,
@@ -279,10 +280,10 @@ export class Engine extends EventEmitter {
     return r ? this.type(r.type).describe(params).split('\n')[0] : id
   }
 
-  /** Whether an item is closed: a topic whose status is closed, or a blocker that resolved (a bot deleted, a script cancelled). */
+  /** Whether an item is closed: its status closed (anything can be closed), or a blocker that resolved (a bot deleted, a script cancelled). */
   isClosed(id: string): boolean {
     const r = this.row(id)
-    return !r || (r.type === 'topic' ? r.params.open === false : this.blocking(r.type) && r.resolved)
+    return !r || r.params.open === false || (r.type !== 'topic' && this.blocking(r.type) && r.resolved)
   }
 
   /** Who owns an item (its `owns` link), or null. */
@@ -544,10 +545,11 @@ export class Engine extends EventEmitter {
     const row = this.row(id)
     if (!row) throw new Error(`No item ${id}.`)
     if (STATE_KEYS.has(key) || OWN_KEYS.has(key)) throw new Error(`${key} can't be set this way.`)
-    // A topic's status is how it stands too: closing one is `close`, and the rest of what closing does.
-    if (row.type === 'topic' && key === 'open') {
+    // An item's status is how it stands too: closing one is `close`, reopening one `reopen`, and the rest of what each does.
+    if (key === 'open') {
       if (value === false) return this.close(id, { actor })
-      if (value !== true && value !== null && value !== undefined) throw new Error('A topic is open (true), closed (false) or has no status (null).')
+      if (value === true && this.isClosed(id)) return this.reopen(id, actor)
+      if (value !== true && value !== null && value !== undefined) throw new Error('An item is open (true), closed (false) or has no status (null).')
       if (JSON.stringify(row.params.open ?? null) === JSON.stringify(value ?? null)) return
       this.store.setOpen(id, (value as boolean | null) ?? null, actor, this.now())
       this.emit('change')
@@ -1372,36 +1374,31 @@ export class Engine extends EventEmitter {
     await this.idle()
   }
 
-  /** Ends a blocker without it happening; a topic is closed, and a bot deleted. */
+  /** The old name for `close`: ends a blocker without it happening, closes a topic, deletes a bot. */
   async cancel(itemId: string, actor = this.me()): Promise<void> {
-    const info = this.info(itemId)
-    if (info?.type === 'topic') return this.close(itemId, { actor })
-    if (!info || info.resolved) throw new Error('That item is not waiting.')
-    if (info.type === 'bot') return this.deleteAgent(itemId, actor)
-    this.resolve(itemId, { cancelled: true }, actor, true)
-    this.emit('change')
-    if (actor !== 'script') await this.idle()
+    return this.close(itemId, { actor })
   }
 
   /**
-   * Opens a closed topic again (its status open), as it was before it closed: who has it is unchanged, and what its
-   * closing cancelled stays cancelled. The chat says who reopened it.
+   * Opens a closed item again (its status open): its owner and who had it come back, as they were when it closed
+   * (`last_owner`, `last_assignees`), but for bots and scripts gone since. What its closing cancelled stays cancelled.
+   * A topic's chat says who reopened it. A cancelled script or bot comes back as it was, holding nothing.
    */
   async reopen(itemId: string, actor = this.me()): Promise<void> {
-    // A cancelled script comes back as it was (its name, source and cycle), with no topics: its cancelling handed them back.
     const row = this.row(itemId)
-    if (row?.type === 'script') {
-      if (!row.resolved) return
-      this.store.reopenItem(itemId, actor, this.now())
-      this.emit('change')
-      return
-    }
-    const item = this.must(itemId)
-    if (!item.closed) return
+    if (!row) throw new Error(`No item ${itemId}.`)
+    if (!this.isClosed(itemId)) return
     this.store.batch(() => {
-      if (row?.type === 'topic') this.store.setOpen(itemId, true, actor, this.now())
-      else this.store.reopenItem(itemId, actor, this.now())
-      this.add(itemId, [{ type: 'topic', params: { text: `Reopened by ${this.actorName(actor)}.` } }], 'system')
+      if (row.params.open === false) this.store.setOpen(itemId, true, actor, this.now())
+      if (row.resolved && row.type !== 'topic' && this.blocking(row.type)) this.store.reopenItem(itemId, actor, this.now())
+      const { last_owner: owner, last_assignees: had } = row.params
+      if (typeof owner === 'string' && !this.owner(itemId) && this.holder(owner) === owner) this.store.setOwner(itemId, owner, actor, this.now())
+      for (const a of Array.isArray(had) ? had.map(String) : []) if (this.holder(a) === a && !this.assignees(itemId).includes(a)) this.setAssignee(itemId, a, true, actor)
+      if (owner !== undefined || had !== undefined) {
+        const { last_owner: _o, last_assignees: _a, ...rest } = this.row(itemId)!.params
+        this.store.setParams(itemId, rest, actor, this.now())
+      }
+      if (row.type === 'topic') this.add(itemId, [{ type: 'topic', params: { text: `Reopened by ${this.actorName(actor)}.` } }], 'system')
     })
     this.emit('change')
     if (actor !== 'script') await this.idle()
@@ -1472,16 +1469,30 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * Closes a topic (its status closed): its open blockers are cancelled. Topics in it are left as they are: they don't
-   * depend on it. Nor are scripts in it: like a bot, a script lasts till someone cancels it.
+   * Closes any item (its status closed), and lets it float free: its owner and assignees are taken off it, kept as
+   * `last_owner` and `last_assignees` for `reopen`. A topic's open blockers are cancelled (topics and scripts in it are
+   * left as they are: they don't depend on it); a bot is deleted, and a script or other blocker cancelled, handing back
+   * what they had.
    */
   async close(itemId: string, opts: { actor?: string } = {}): Promise<void> {
     const actor = opts.actor ?? this.me()
-    if (this.row(itemId)?.type !== 'topic') throw new Error(`No topic ${itemId}.`)
+    const row = this.row(itemId)
+    if (!row) throw new Error(`No item ${itemId}.`)
     if (this.isClosed(itemId)) return
+    if (row.type === 'bot') await this.deleteAgent(itemId, actor)
     this.store.batch(() => {
-      for (const b of this.children(itemId, true)) if (b.type !== 'script') this.resolve(b.id, { cancelled: true, detail: 'Its topic closed.' }, actor, true)
-      this.store.setOpen(itemId, false, actor, this.now())
+      const owner = this.owner(itemId)
+      const had = this.assignees(itemId)
+      if (row.type === 'topic')
+        for (const b of this.children(itemId, true)) if (b.type !== 'script') this.resolve(b.id, { cancelled: true, detail: 'Its topic closed.' }, actor, true)
+      if (owner || had.length)
+        this.store.setParams(itemId, { ...row.params, ...(owner ? { last_owner: owner } : {}), ...(had.length ? { last_assignees: had } : {}) }, actor, this.now())
+      for (const a of had) this.setAssignee(itemId, a, false, actor)
+      if (owner) this.store.setOwner(itemId, null, actor, this.now())
+      // A blocker resolves (cancelled), as it always has; anything else takes the status closed.
+      if (row.type !== 'topic' && this.blocking(row.type)) {
+        if (!row.resolved) this.resolve(itemId, { cancelled: true }, actor, true)
+      } else this.store.setOpen(itemId, false, actor, this.now())
     })
     this.emit('change')
     if (actor !== 'script') await this.idle() // a script waiting on its own queue would wait for itself

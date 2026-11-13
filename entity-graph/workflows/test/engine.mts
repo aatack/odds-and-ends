@@ -1106,5 +1106,31 @@ assert.deepEqual(unexpected, [], 'no bot ran that no test expected')
   assert.deepEqual((await runScript('return 1', { id: 'x' }, slow)).value, 1, 'and the next script still runs')
 }
 
+// Closing anything floats it free (no owner, no assignees, kept for reopening); reopening brings both back.
+{
+  const t = (await engine.create('Float free'))!
+  await engine.assign(t, 'sam', true)
+  assert.equal(engine.owner(t), 'human')
+  await engine.close(t)
+  assert.ok(item(t).closed)
+  assert.equal(engine.owner(t), null)
+  assert.deepEqual(item(t).assignees, [])
+  await engine.reopen(t)
+  assert.ok(!item(t).closed)
+  assert.equal(engine.owner(t), 'human')
+  assert.deepEqual(item(t).assignees, ['human', 'sam'])
+  assert.equal((await engine.inspect(t)).values.last_owner, undefined, 'what was kept for reopening goes once it is used')
+  await engine.close(t)
+  const [link] = await engine.addItems(null, [{ type: 'link', params: { url: 'https://example.com/closable' } }])
+  await engine.assign(link, 'sam', true)
+  await engine.close(link)
+  assert.ok(engine.isClosed(link), 'anything closes, not just a topic')
+  assert.deepEqual(engine.assignees(link), [])
+  await engine.setValue(link, 'open', true)
+  assert.ok(!engine.isClosed(link))
+  assert.deepEqual(engine.assignees(link), ['sam'])
+  await engine.close(link)
+}
+
 mcp.close()
 console.log('engine: ok')
