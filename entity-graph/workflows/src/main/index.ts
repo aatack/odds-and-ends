@@ -2,12 +2,30 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, clipboard, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain, session, shell, type WebContents } from 'electron'
 import { sourceFile } from '../backend/info'
 import { backend, type Backend } from './backend'
 
 // A profile of its own (local storage, window state), apart from the older app's, so the two run side by side.
 app.setPath('userData', join(app.getPath('appData'), 'workflows-egdb'))
+
+/** The session a link's page is shown in (LinkFocus's webview). */
+const LINKS = 'persist:links'
+
+/**
+ * Ctrl+W (rather than closing the window, as the default menu would), Alt+Left and Ctrl+Shift+Tab take the top view off
+ * the stack; Alt+Right and Ctrl+Tab put the last one taken off back on. Pressed in the app or in a link's page.
+ */
+function navKeys(to: WebContents, event: Electron.Event, input: Electron.Input): void {
+  if (input.type !== 'keyDown' || input.meta) return
+  const ctrlTab = input.control && !input.alt && input.key === 'Tab'
+  const ctrlW = input.control && !input.alt && !input.shift && input.key.toLowerCase() === 'w'
+  const altLeft = input.alt && !input.control && !input.shift && input.key === 'ArrowLeft'
+  const altRight = input.alt && !input.control && !input.shift && input.key === 'ArrowRight'
+  if (!ctrlTab && !ctrlW && !altLeft && !altRight) return
+  event.preventDefault()
+  to.send(altRight || (ctrlTab && !input.shift) ? 'forward' : 'back')
+}
 
 /**
  * The app is a window onto a backend on one source (a file), which the person
@@ -20,18 +38,34 @@ async function main(): Promise<void> {
     width: 1200,
     height: 800,
     title: 'YAWN',
-    webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: false },
+    // A link's focus is a webview: the page in a tab of its own, not a frame in the app's page. Framed, a page is a
+    // third party (its cookies refused, its own checks against being framed tripped), and Google's and GitHub's sign-in
+    // fail there; in a webview it is top-level, as in a browser. Every guest is locked down below.
+    webPreferences: { preload: join(__dirname, '../preload/index.js'), sandbox: false, webviewTag: true },
   })
-  // A link's focus shows the page in a frame: most sites forbid being framed (X-Frame-Options, CSP frame-ancestors),
-  // which would leave it blank. For frames only (never the app's own page), those headers are dropped.
-  win.webContents.session.webRequest.onHeadersReceived({ urls: ['http://*/*', 'https://*/*'] }, (details, done) => {
-    if (details.resourceType !== 'subFrame' || !details.responseHeaders) return done({})
-    const headers = Object.fromEntries(
-      Object.entries(details.responseHeaders)
-        .filter(([k]) => k.toLowerCase() !== 'x-frame-options')
-        .map(([k, v]) => [k, k.toLowerCase() === 'content-security-policy' ? v.map((p) => p.replace(/frame-ancestors[^;]*;?/gi, '')) : v]),
-    )
-    done({ responseHeaders: headers })
+  // The links' pages share one session, kept on disk (signing in once lasts), apart from the app's own. It says it is
+  // Chrome, without Electron or the app in its user agent: Google refuses to sign in a browser it takes for embedded.
+  const links = session.fromPartition(LINKS)
+  links.setUserAgent(links.getUserAgent().replace(/ Electron\/\S+/, '').replace(new RegExp(` ${app.getName()}/\\S+`, 'i'), ''))
+  // A guest is somebody else's page: no preload, no node, its own sandbox, only http(s), only in the links' session.
+  win.webContents.on('will-attach-webview', (event, preferences, params) => {
+    delete preferences.preload
+    preferences.nodeIntegration = false
+    preferences.contextIsolation = true
+    preferences.sandbox = true
+    if (!/^https?:/.test(params.src) || params.partition !== LINKS) event.preventDefault()
+  })
+  win.webContents.on('did-attach-webview', (_e, guest) => {
+    // A sign-in's popup (window.open with a size: Google's, GitHub's) opens in a window of the app, in the same session,
+    // so it can answer the page that opened it; any other new tab or window goes to the browser.
+    guest.setWindowOpenHandler(({ url, disposition }) => {
+      if (disposition === 'new-window' && /^https?:/.test(url))
+        return { action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 680, autoHideMenuBar: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } } }
+      if (/^https?:/.test(url)) void shell.openExternal(url)
+      return { action: 'deny' }
+    })
+    // The view's keys still work while the page has the keyboard.
+    guest.on('before-input-event', (event, input) => navKeys(win.webContents, event, input))
   })
 
   let current: Backend | null = null
@@ -78,18 +112,7 @@ async function main(): Promise<void> {
     if (/^https?:/.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
-  // Ctrl+W (rather than closing the window, as the default menu would), Alt+Left and Ctrl+Shift+Tab take the top view
-  // off the stack; Alt+Right and Ctrl+Tab put the last one taken off back on.
-  win.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown' || input.meta) return
-    const ctrlTab = input.control && !input.alt && input.key === 'Tab'
-    const ctrlW = input.control && !input.alt && !input.shift && input.key.toLowerCase() === 'w'
-    const altLeft = input.alt && !input.control && !input.shift && input.key === 'ArrowLeft'
-    const altRight = input.alt && !input.control && !input.shift && input.key === 'ArrowRight'
-    if (!ctrlTab && !ctrlW && !altLeft && !altRight) return
-    event.preventDefault()
-    win.webContents.send(altRight || (ctrlTab && !input.shift) ? 'forward' : 'back')
-  })
+  win.webContents.on('before-input-event', (event, input) => navKeys(win.webContents, event, input))
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else void win.loadFile(join(__dirname, '../renderer/index.html'))
 
