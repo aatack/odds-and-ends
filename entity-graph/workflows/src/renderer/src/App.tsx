@@ -471,7 +471,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         onRename={e.type === 'topic' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
       />
       {w.error && <div className="error">{w.error}</div>}
-      <div className={`view-body ${!debug && ((shown !== 'focus' && shown !== 'assignments') || e.type === 'file' || e.type === 'bot') ? 'fill' : ''}`}>
+      <div className={`view-body ${!debug && (shown === 'comments' || shown === 'notes' || (shown === 'focus' && (e.type === 'file' || e.type === 'bot'))) ? 'fill' : ''}`}>
         {debug ? (
           <DebugView id={e.id}>{mobile && pins}</DebugView>
         ) : shown === 'assignments' ? (
