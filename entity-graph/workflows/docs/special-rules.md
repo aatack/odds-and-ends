@@ -8,67 +8,68 @@ follow a link) is not listed. Keep this list current: see AGENTS.md. Each rule i
 
 | Type | Special behaviour | Where |
 |---|---|---|
-| `task` | The only type that can be assigned (`setAssignee`), has a chat view, a title, Next, `withYou`, Reopen. Its first items (`items`) and `assignees` are params taken out on add. A new one goes to its `assignees`, else its maker if a person, else nobody. `key` makes it add once. `detached` puts it in no item. A task in another blocks nothing and is not closed with it. | B `addNow`, `toItem`, `close`; F `FOCUS`, `itemActions`, `App` |
-| `bot` | Sits in no item; its chat holds only notes. Settings are params; the app keeps `session_id`, `seen`, `last_run`, `handoff` on it. Assignable. Cancelling deletes it and hands its tasks back. | B `agent`, `saveAgent`, `deleteAgent`, `addNow`; F `BotView`, `FOCUS` |
-| `user` | Sits in no item; its id is its username. Signing in makes one. Assignable. | B `signIn`, `saveUser`, `addNow` |
-| `script` | A bot without a model: may sit in no topic, with a `name` (a holder by it, offered in pickers). Never a blocker. Wakes by the bot rule but only for what happens to *it* (a topic given to it, a note in its chat), plus its cycle; `last_wake` kept. Context is the script plus `topics`; `mentions` / `refs` helpers. Done or cancelled, hands its topics back. Unsafe tools only on a person's press. Counted against `scripts.max_running`. | B `addNow`, `holder`, `scriptDue`, `checkOne`, `itemTypes.ts`, `script.ts`; F `ScriptCard`, `defaultActions` (Snooze) |
-| `approval` | A blocker that leaves the task `withYou`. Its `action` must be unsafe. Resolved only by a person (`approve`). | B `prepare`, `waitsOnHuman`, `approve`; F `Approval` |
-| `note` | Plain. In the chat its picture is whoever wrote it, not its type; it is Ctrl+F's text. May sit in no item (a set of notes, `newNotes`, pinned where it was made). Its focus is the tree of what is in it (`NotesView`, from `subtree`, which walks into notes only); `section` and `open` (params) make a row a heading or a checkbox there. | B `newNotes`, `subtree`; F `itemIcon`, `Chat`, `FOCUS`, `notes/` (`NotesView`, `NewNotes` in `Pins`) |
-| `widget` | `widget_state` is set through `setWidgetState` / `set_value`; drawn in a sandboxed frame. | B `setWidgetState`; F `Widget` |
+| `topic` | The one type people write (old `task` and `note` are added as one; stored ones read as one: `legacyValues`). Its title is its `text`'s first line (`rename` changes that line). `open` is its status (true, false, absent: none), set through `close`/`reopen` (`set_value` on `open` goes there too), never `resolved`; closed reads as resolved. With a status it is a card that opens (`TaskCard`), has Close/Reopen and no thumbs-up; with none, its chat card is its words. Holds `comments` and `notes`; `display` picks its focus (`DisplayPicker`). Its first `comments`/`notes` and `assignees` are params taken out on add; a new open one goes to its `assignees`, else its maker if a person. `key` makes it add once; `detached` puts it in no item. An open one made in another's comments is pinned there and blocks nothing. Answers to `type: task`/`note` and has `title` in search queries. Ctrl+F's text; in the chat its picture is whoever wrote it. | B `addNow`, `prepare` (`asTopic`), `close`, `setValue`, `valuesOf`, `store.ts` (`setOpen`, `legacyValues`); F `CARDS`, `focusKind`, `itemActions`, `App` (`DisplayPicker`), `ItemMenu`, `Chat` |
+| `bot` | Sits in no item; its chat holds only topics, and writing in it assigns the bot item to the bot. Settings are params; the app keeps `session_id`, `seen`, `last_seen`, `last_run`, `handoff` on it. Cancelling deletes it and hands its items back. | B `agent`, `saveAgent`, `deleteAgent`, `send`, `addNow`; F `BotView`, `FOCUS` |
+| `user` | Sits in no item; its id is its username. Signing in makes one. | B `signIn`, `saveUser`, `addNow` |
+| `script` | A bot without a model: may sit in no topic, with a `name` (a holder by it, offered in pickers). Never a blocker. Runs by the bot rule (`due`), on one topic: its context's `topics` is that one; `mentions` / `refs` helpers. Cancelled, hands its topics back. Unsafe tools only on a person's press. Counted against `scripts.max_running`. | B `addNow`, `holder`, `due`, `runScriptItem`, `itemTypes.ts`, `script.ts`; F `ScriptCard`, `defaultActions` (Snooze) |
+| `approval` | A blocker that leaves the topic `withYou`. Its `action` must be unsafe. Resolved only by a person (`approve`): the only way a person runs an unsafe action a bot asked for. | B `prepare`, `waitsOnHuman`, `approve`; F `Approval` |
+| (notes) | A topic's notes are a tree (`NotesView`, from `subtree`, which walks into topics' notes only); `section` and `open` make a row a heading or a checkbox there. New notes (`newNotes`) makes a topic showing its notes, in no item, pinned where it was made. | B `newNotes`, `subtree`; F `notes/` (`NotesView`, `NewNotes` in `Pins`) |
 | `search` | One per store, in no item; its `sections` configure every finder. Read and set through its own calls. | B `searchSections`, `setSearchSections`; F `SearchSectionsContext` |
-| `slack_message`, `slack_channel` | Fetch nothing on add; their card and view read Slack (cached) as shown. A Slack link in a note is added as one (see `link`). | B `slack.ts`, `presets.ts`; F `SlackView`, `Composer` (paste) |
-| `link` | A web page. Made when a note mentions a URL (bare, `[label](url)` or `[url]()`), as are Slack messages and channels, in no task (shown in no chat until pinned): its id **is** the URL, so it is made once. A URL in rendered text is drawn as that item's pill. | B `addNow`, `pulledIn`; F `Markdown` Link, `ItemRef` |
-| `file` | Its params are prepared by `Files.prepare` (a path checked; `copy` kept under its hash and dropped; `name`, `mime` filled in). Its bytes are read through the backend, never by the window. Only a file it refers to may be edited (`saveFileText`); a kept copy stays as given. A file dropped or pasted in a task's chat is uploaded as one. Its view is the file itself (`FileFocus`), not its details. | B `files.ts`, `prepare`, `uploadFile`, `fileData`, `fileText`, `saveFileText`; F `FileView`, `App` (focus, drop, paste) |
-| `process` | Switched off: can't be added; kept so stored ones read. | B `prepare` |
+| `slack_message`, `slack_channel` | Fetch nothing on add; their card and view read Slack (cached) as shown. A Slack link in a topic is added as one (see `link`). | B `slack.ts`, `presets.ts`; F `SlackView`, `Composer` (paste) |
+| `link` | A web page. Made when a topic's text mentions a URL (bare, `[label](url)` or `[url]()`), as are Slack messages and channels, in no topic (shown in no chat until pinned): its id **is** the URL, so it is made once. A URL in rendered text is drawn as that item's pill. | B `addNow`, `pulledIn`; F `Markdown` Link, `ItemRef` |
+| `file` | Its params are prepared by `Files.prepare` (a path checked; `copy` kept under its hash and dropped; `name`, `mime` filled in). Its bytes are read through the backend, never by the window. Only a file it refers to may be edited (`saveFileText`); a kept copy stays as given. A file dropped or pasted in a topic's chat is uploaded as one. Its view is the file itself (`FileFocus`), not its details. | B `files.ts`, `prepare`, `uploadFile`, `fileData`, `fileText`, `saveFileText`; F `FileView`, `App` (focus, drop, paste) |
 
 ## Values with special meaning
 
 | Value | Meaning | Where |
 |---|---|---|
 | `type`, `resolved`, `cancelled`, `data`, `state`, `reactions` (and old `resolved_at`, `resolved_by`) | How an item stands, not its params (`STATE_KEYS`). Not settable with `set_value`; anything else is (duck typed: a type's params are advice). | B `store.ts`, `setValue` |
-| `session_id`, `seen`, `last_run`, `last_wake`, `handoff`, `key` | Kept by the app for itself (`OWN_KEYS`); not settable with `set_value`. | B `engine.ts` |
-| `title` | A task's name; a bot's summary is its `@name` instead. | B `title`, `toInfo` |
-| `debounce_minutes`, `cycle_minutes` | The wake rule's two numbers, on bots and scripts (defaults 1 and 15). | B `wakes.ts`, `wake`, `scriptDue` |
-| `widget_state` | A widget's state. | B `setWidgetState`; F `Widget` |
+| `session_id`, `seen`, `last_run`, `last_seen`, `last_wake` (old), `handoff`, `key` | Kept by the app for itself (`OWN_KEYS`); not settable with `set_value`. `last_seen`: where a bot or script last ran on each item it holds (its per-item marks). | B `engine.ts` (`setMark`) |
+| `open`, `display` | A topic's status (see `topic`) and which list its view shows. | B `setValue`, `setOpen`; F `focusKind`, `DisplayPicker` |
+| `cycle_minutes` | On bots and scripts: how long before it runs on an item it still holds again (30). An old `debounce_minutes` is ignored. | B `cycleMinutes`, `due` |
+| `migration.links_until` (a setting) | Up to when an older build's links have been read in (`migrate`). | B `egdb.ts` |
 | `sections` | On the search item: the finders' sections. | B, F as above |
 | `derives_from` | egdb: an entity reads its source's values under its own (not yet used by the app). | egdb `read.rs` |
 | `reactions` | Who gave a thumbs-up; set by `react`. | B `react`; F `Chat` |
 | `wf.setting`, `wf.custom_action`, `wf.root` types | The app's own entities, not items: settings, custom actions, the root. | B `egdb.ts`, `store.ts` |
+| `task`, `note` as a custom action's type | Read as `topic`'s. | B `customActions.ts` |
 
 ## Links
 
 | Link | Meaning | Where |
 |---|---|---|
-| `contains` | From an item (or the root, `@root`) to what is in it. The **first** one is where an item sits (`parent_id`); a later one (an older build's `link_items`) reads as a pin. A move (`moveItem`) removes the one it sits by and adds another, so who made it and when become the move's; an item with an older build's later one can't be moved. | B `store.ts` (`move`), `egdb.ts` loader |
-| `pins` | From an item to what is pinned to it: artefacts useful in actioning it. Followed back, where an item is referenced. A subtask is pinned to the task it is made in; `pin: true` on an added item pins it where it is added. Counts for nothing else. | B `store.ts` (`pin`, `unpin`), `egdb.ts` loader, `addNow`, `pin`; F `Pins`, `ItemMenu` |
-| `assigned_to` | From a task to a person, bot or script: who has it. Drives `withYou`, Next, what wakes bots and scripts and what they run on, hand-backs. | B `setAssignee`, `assignees`, `assignedTo`, `wake`, `settle` |
+| `comments`, `notes` | From a topic (or a bot's or script's own chat) to what is in it, sorted by place: its chat and its tree. An item has at most one, where it sits (`parent_id`, `via`); none in no item. A move (`moveItem`) removes it and adds another; who made the item, and when, stay (they are who set its `type`). | B `store.ts` (`insertItem`, `move`), `egdb.ts` loader |
+| `pins` | From an item to what is pinned to it: artefacts useful in actioning it. Followed back, where an item is referenced. An open topic is pinned to the topic it is made in; `pin: true` on an added item pins it where it is added. Counts for nothing else. | B `store.ts` (`pin`, `unpin`), `egdb.ts` loader, `addNow`, `pin`; F `Pins`, `ItemMenu` |
+| `assignees` | From any item to a person, bot or script: who has it. Drives `withYou`, Next, the search page, what bots and scripts run on, hand-backs. | B `setAssignee`, `assignees`, `assignedTo`, `due`, `settle` |
+| `owns` | From a person or bot to the topics, bots and scripts they own: who an item goes back to, and the search page's *You own*. | B `ownerFor`, `setOwner`, `handBack`; F `sections.ts` |
+| `contains`, `assigned_to` | An older build's. Read once into the above by `migrate` (added links, nothing rewritten), past `migration.links_until`. | B `egdb.ts` |
 
 ## Ids and actors
 
 | Id | Meaning | Where |
 |---|---|---|
-| `bot:<id>` as an author | A bot's run. Its own writes don't wake it; the chat names it `@name`; the finder's "assign to last bot" reads it. | B `wake`, `actorName`; F `people.ts`, `Chat`, `defaultActions`, `App.likeliest` |
-| `script`, `script:bot`, `system`, `mcp`, `bot` | Other authors: scripts, the app, outside agents. `system` notes are the app's (failures, reopen). | B `authorOf`, `callAction`; F `icons.whoIcon` |
+| `bot:<id>` as an author | A bot's run. Its own writes are not news to it, and its own reassignments don't make an item due; the chat names it `@name`; the finder's "assign to last bot" reads it. | B `due`, `claim`, `actorName`; F `people.ts`, `Chat`, `defaultActions`, `App.likeliest` |
+| `script`, `script:bot`, `system`, `mcp`, `bot` | Other authors: scripts, the app, outside agents. `system` comments are the app's (failures, reopen). | B `authorOf`, `callAction`; F `icons.whoIcon` |
 | A username | A person, signed in by it; `me()` is the first person when nobody is said. | B `user`, `me` |
-| `@root` | The root of the tree. | B `store.ts` |
+| `@root` | The root an older build linked items in no task from; skipped by the loader and `migrate`. | B `egdb.ts` |
 
 ## Behaviour rules
 
 | Rule | Where |
 |---|---|
 | **withYou**: open, assigned to the viewer, and blocked by nothing but approvals. | B `toItem` |
-| **Next**: the viewer's withYou tasks, most recently touched first; skipped ones last. | B `next`; F `useWorkflows.next` |
-| **Owner**: the maker if a person, else the parent's owner. Hand-backs go there. | B `owner`, `handBack` |
-| **Hand-back after a run** (`settle`): a task the bot said nothing about goes back to its owner, unless the run changed who has it, it waits on a non-person blocker the bot added, or news came in during the run. An update can't hand away a task a person wrote in during the run. A failed run hands everything back with a note. | B `endRun`, `settle` |
-| **Wakes** (`dueAt`, one rule for bots and scripts): something happened to it (a topic assigned to it, a note in its chat, its settings) since it last woke, when that has settled for the debounce; with nothing new, a cycle since the last wake while it holds topics (news in those topics is heard then); never while running. Limits `bots.max_running` (6) and `scripts.max_running` (8). | B `wakes.ts`, `wake`, `scriptDue`, `checkDue`; `workers.fill` |
-| **Usage limits**: a run stopped by one is put back as if it never began (the bot keeps its topics, news stays new), and no bot of that provider runs until it resets (`limitedUntil`; held in memory). | B `endRun`, `pause`; `workers.fill` |
-| **Prompts**: a task's whole history the first time a session sees it (`seen`), then only what is new; its pins (all the first time, then those pinned since the last run began), each at its focus as text (a task or bot at its pill). A handoff starts a fresh session, as does waking more than `bots.idle_minutes` (30) after the last run ended (the cache is cold by then); a fresh session is told its handoff and a recap from the edit log (topics given to or taken from it, what it wrote, names beside ids). | B `claim`, `recap`, `endRun`; `workers.run`, `promptFor` |
-| **Sending** with an `@`, `[id]()` or `[label](id)` of a bot or person (or a default action that assigns) hands the task to them and takes it off the sender. | B `send` |
-| **Bots never close** a task unless asked (instruction only). | `workers.ts` SYSTEM |
+| **Next**: the viewer's withYou items, most recently touched first, never the one on screen nor what they looked at in the last half hour. | B `next`; F `useWorkflows.next` |
+| **Owner** (`owns`): the maker if a person, else the owner of what it is in, else the owner of the bot that made it; set as it is made. Hand-backs go there. | B `ownerFor`, `owner`, `handBack` |
+| **Hand-back after a run** (`settle`): the item the bot said nothing about goes back to its owner, unless the run changed who has it, it waits on a non-person blocker the bot added, or a person wrote in it during the run (then the bot keeps it and is due on it again). An update can't hand away an item a person wrote in during the run. A failed run hands it back with a note. | B `endRun`, `settle` |
+| **Runs** (`due`, one rule for bots and scripts): one item a run; the first item it holds (longest held first) it hasn't run on in its `cycle_minutes`, or that someone else assigned it again since; Wake now runs its first at once; never while running. Limits `bots.max_running` (6) and `scripts.max_running` (8). | B `due`, `claim`, `checkDue`; `workers.fill` |
+| **Usage limits**: a run stopped by one is put back as if it never began (the bot keeps its item, news stays new), and no bot of that provider runs until it resets (`limitedUntil`; held in memory). | B `endRun`, `pause`; `workers.fill` |
+| **Prompts**: an item's whole history the first time a session sees it (`seen`), then only what is new since the bot last ran on it; its pins (all the first time, then those pinned since), each at its focus as text (a chat at its pill). A handoff starts a fresh session, as does waking more than `bots.idle_minutes` (30) after the last run ended (the cache is cold by then); a fresh session is told its handoff and a recap from the edit log (topics given to or taken from it, what it wrote, names beside ids). | B `claim`, `recap`, `endRun`; `workers.run`, `promptFor` |
+| **Sending** with an `@`, `[id]()` or `[label](id)` of a bot or person (or a default action that assigns) hands the item to them and takes it off the sender. | B `send` |
+| **Bots never close** a topic unless asked (instruction only). | `workers.ts` SYSTEM |
 | **Unsafe**: an unsafe action runs only for a person (an approval, a pressed script, `/`). | B `callAction`, `itemTypes.ts` script |
-| **Closing** a task cancels its open blockers; tasks in it stay open. Reopen undoes the close only. | B `close`, `reopen` |
-| **Finder sections**: Needs you = withYou; With bots = held by a bot (not a script); Waiting = the rest open; Closed today. Most recently touched first. | F `sections.ts`; B `overview` (order) |
+| **Closing** a topic cancels its open blockers; topics in it stay open. Reopen undoes the close only. | B `close`, `reopen` |
+| **Finder sections**: the search page shows Assigned to you (open, assigned to whoever it is for) then You own (open topics, bots and scripts they own, not assigned to them), for the person signed in or whoever its picker says (`searchWhoAtom`; then *Assigned*/*Owned*). Pickers show the configured ones: Needs you = withYou; With bots = held by a bot (not a script); Waiting = the rest open; Closed today. Most recently touched first. | F `sections.ts`, `App` (`PickPill`); B `overview` (what is listed, order) |
 | **Default actions** with an empty input: assign to the last bot, wait for Slack, snooze. | F `defaultActions.ts` |
-| **History**: closed tasks leave the back/forward stacks; Forward with nothing ahead goes where you last went from here. | F `useWorkflows.ts` |
-| **Text views**: an item as a bot reads it, at the sizes it is drawn at (`views.ts`): pill (type, name, id), card (a prompt's line), focus by `FOCUS` (a chat as its latest 100 cards; a note as its tree, notes walked into, anything else as its pill, 100 lines at most with the ids to ask for the rest; anything else as its values). `get_item` gives `focus` for anything not a task or bot, and any size with `size`. | B `views.ts`, `view`, `get_item`, `claim`, `promptFor` |
+| **History**: closed topics leave the back/forward stacks; Forward with nothing ahead goes where you last went from here. | F `useWorkflows.ts` |
+| **Text views**: an item as a bot reads it, at the sizes it is drawn at (`views.ts`): pill (type, name, id), card (a prompt's line), focus by `focusKind` (a chat as its latest 100 cards; a topic showing its notes as its tree, topics' notes walked into, anything else as its pill, 100 lines at most with the ids to ask for the rest; anything else as its values). `get_item` gives `focus` for anything without a chat, and for a topic that shows its notes; any size with `size`. | B `views.ts`, `view`, `get_item`, `claim`, `promptFor` |
 | **Old tool names** (`add_events`, `event_id`, …) are hidden aliases. | B `actions.ts` `LEGACY_*`, `callAction` |

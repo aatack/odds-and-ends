@@ -9,51 +9,64 @@ The text uses ASD-STE100 Simplified Technical English.
 - You have many tasks. They come from different sources, for example Slack, the
   calendar and GitHub.
 - Bots can do much of this work.
-- You push one button. The app shows the next task that needs you.
+- You push one button. The app shows the next item that needs you.
 - Bots do all the other work.
 
-## Tasks and items
+## Topics and items
 
-- A **task** is one thing to do.
-- A task has a list of **items**. The list is the history of the task.
-- A task is also an item. Thus a task can contain other tasks. A bot can
-  split a task into smaller tasks in this way.
-- "Item" is the general word for a thing in the database: a task, a note, a
-  blocker, a bot, a person. A link of the type `contains` connects a task to each
-  of its items.
-- Some items are complete when they occur. Example: a note.
+- "Item" is the general word for a thing in the database: a topic, an
+  approval, a script, a bot, a person.
+- A **topic** is the one thing that people write. It can be a comment, a
+  task or a note. The first line of its text is its title.
+- A topic can have a status. It is open, or it is closed. A topic with no
+  status is a comment. An open topic is a task, or a checkbox in a list of
+  notes. To close a topic is to set its status to closed.
+- A topic has two lists of items:
+  - Its **comments**. This is its chat: the history of the topic, in order.
+  - Its **notes**. This is a tree of topics.
+- A topic shows one of the two lists. Use the menu at the top of the topic to
+  select which. The chat is the default.
+- A link of the type `comments` or `notes` connects a topic to each item in
+  that list.
+- A topic can contain other open topics. A bot can split a task into smaller
+  tasks in this way. A topic in a topic does not block it.
+- Some items are complete when they occur. Example: a comment.
 - Other items are **blockers**. A blocker waits until a condition occurs.
-  Examples: a script finds that CI is complete, or a person approves an action.
+  Example: a person approves an action.
 - When a blocker is complete, it records its result.
-- A task can have more than one blocker at the same time.
-- A person or a bot can **have** a task. To give a task to a person or to a bot
-  is to **assign** it. An assignment is a link from the task to the person or bot.
-  It is not an item in the task.
-- If you have a task and it has no blockers, it waits for you.
-- A new task that you make is yours. A new task that a bot makes has nobody,
-  unless the bot gives it to somebody.
-- A task that contains an open task is blocked by it. Thus you do the smaller
-  tasks before the task that contains them.
+- A topic can have more than one blocker at the same time.
+- A person, a bot or a script can **have** an item. To give an item to a
+  person, a bot or a script is to **assign** it. Any item can be assigned. An
+  assignment is a link of the type `assignees` from the item to the person, bot
+  or script. It is not an item in the topic.
+- If you have an item and it has no blockers, it waits for you.
+- Topics, bots and scripts have an **owner**: a person or a bot. A link of the
+  type `owns` goes from the owner to the item. If a person made the item, the
+  owner is that person. If not, the owner is the owner of the topic that the
+  item is in. If that topic has no owner, the owner is the owner of the bot that
+  made the item.
+- A new open topic that you make is yours. A new topic that a bot makes has
+  nobody, unless the bot gives it to somebody.
+- To wait for something, give the topic to a script.
 
 | Blocker | It waits for |
 | --- | --- |
-| Task | A task inside this task to close. |
 | Approval | You to approve an action. |
-| Script | A condition that a small program checks at set times. |
 
 ## The chat
 
-- The app shows all of the items in a task as a chat, each as a card: notes,
-  child tasks, scripts and approvals. Your items are on the right. Items from
+- The app shows the comments of a topic as a chat, each as a card: comments,
+  open topics, scripts and approvals. Your items are on the right. Items from
   other people, bots and scripts are on the left. A bot that wants to show
-  something in the chat adds it to the task as an item.
+  something in the chat adds it to the topic as an item.
 - A script card shows what the script is, a play button (a person's press runs it now), when it runs next, and what
   it finished with.
-- The app shows who has the item at the top right. Click it to give the item to
-  more people or bots, or to take it from them.
-- When you send text, it is a note in the item.
+- The top of each item shows the item (its icon and its title) and who has it.
+  Click who has it to give the item to more people or bots, or to take it from
+  them.
+- When you send text, it is a comment in the topic.
 - Type "@" and select a bot or a person to give the item to them. When you send
-  the note, they get the item and you do not have it.
+  the comment, they get the item and you do not have it.
 - When the chat input is empty, push Enter to give the item to a bot or a person.
   The app selects who had the item last, or who you gave an item to last. Push
   Tab to select a different bot or person.
@@ -63,29 +76,33 @@ The text uses ASD-STE100 Simplified Technical English.
 - A bot is an item of its own. It has a name, instructions, a model and a folder.
   You make bots on the Bots page. Different bots can use different models. The
   model is opus if you do not select a different model.
-- A bot has a chat of its own. Write in it to talk to the bot.
-- A bot starts when an item occurs to the bot itself. Examples: somebody gives
-  it an item, somebody changes its settings, or somebody writes in its chat.
-- A bot also starts every 15 minutes, if items occurred in its items after its
-  last run.
+- A bot has a chat of its own. Write in it to talk to the bot. When you write in
+  it, the app gives the bot item to the bot.
+- A bot works on one item at a time. A script does the same.
+- Every minute, the app looks at each bot that does not run. It selects the
+  first item that the bot has (the item that it had for the longest time
+  first) that the bot did not work on in the last 30 minutes. The bot then
+  works on that item.
+- If somebody gives the item to the bot again, the bot works on it again at
+  once. If a person writes in the item while the bot works on it, the bot works
+  on it again at once.
+- Push Wake now on the bot page to make the bot start at once.
 - A bot does one run at a time. Thus two bots do not work on the same thing at the
   same time by accident.
-- A bot waits for a short time (1 minute, if you do not change it) after the last
-  item before it starts. Thus you can give it many items quickly, and it does
-  them all in one run.
 - A bot has one conversation, for all of its items. The bot remembers its work.
   Its instructions are in its system prompt. After the conversation becomes
   shorter (compaction), the bot gets its instructions again.
-- In each run, the bot gets all of its items. For each item, it gets the items
-  that occurred after its last run. The first time that it sees an item, it gets
-  all of the item.
-- The bot must do the work on its items, and then give each item to the next
-  person or bot. It can also keep an item.
-- For each item, a bot can reply, add blockers, give the item to a person or to a
+- In each run, the bot gets the items in its item that occurred after it last
+  worked on that item. The first time that it sees an item, it gets all of the
+  item.
+- The bot must do the work on its item, and then give the item to the next
+  person or bot. It can also keep the item.
+- For its item, a bot can reply, add blockers, give the item to a person or to a
   different bot, or close the item.
-- If the bot does not give a task to somebody, the task goes back to its owner:
-  the person who made it. A bot never keeps a task only to wait: it hands it to a script that gives it back.
-- A bot does not close a task unless somebody tells it to close the task.
+- If the bot does not give an item to somebody, the item goes back to its
+  owner. A bot never keeps an item only to wait: it hands it to a script that
+  gives it back.
+- A bot does not close a topic unless somebody tells it to close the topic.
 - The bot page shows the result of the last run of the bot.
 - When a bot asks you a question, the question must be short and direct.
 
@@ -98,8 +115,14 @@ The text uses ASD-STE100 Simplified Technical English.
   `~/tasks/tasks.sqlite`. If the file does not exist, the app makes it.
 - The app keeps the username and the source for the next start. Use the menu to
   sign out, or to close the source.
-- Next shows the items that you have, and that nothing blocks. The item that
-  nobody touched for the longest time comes first.
+- The search page (Ctrl+L) shows two lists. The first list is the open items
+  that you have. The second list is the open topics, bots and scripts that you
+  own and do not have.
+- Use the menu at the top right of the search page to see the search page of
+  other people or bots.
+- Next (Ctrl+D) shows the next item that you have, and that nothing blocks.
+  It does not show the item on the screen. It does not show items that you
+  looked at in the last 30 minutes.
 
 ## Safety
 
@@ -117,9 +140,10 @@ The text uses ASD-STE100 Simplified Technical English.
 - The database (egdb) keeps the full history of each item: every value that it
   had, and every link. The app does not keep a different history.
 - The database records the time of each change, and who or what did it. Thus
-  the app keeps only whether an item is complete (`resolved`). The database
-  records when it became complete, and who completed it.
-- Click the title of a task to open its menu. Use the menu to debug the task.
+  the app keeps only the status of a topic (`open`), and whether a blocker is
+  complete (`resolved`). The database records when it changed, and who changed
+  it.
+- Click the title of an item to open its menu. Use the menu to debug the item.
 - The debug page shows an item as the database keeps it: its values, its links,
   and who made it and when.
 - Bots can read this history. They use it to find which processes are slow, where

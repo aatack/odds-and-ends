@@ -162,7 +162,7 @@ export function Composer({
           </span>
         ) : resolving ? (
           <span className={`hint ${text ? 'below' : ''}`}>
-            <b>Resolve?</b> — press Ctrl+Enter again to resolve this task
+            <b>Close?</b> — press Ctrl+Enter again to close this topic
           </span>
         ) : (
           !text && (
