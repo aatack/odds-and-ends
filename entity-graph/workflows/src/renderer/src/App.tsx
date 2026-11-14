@@ -722,10 +722,6 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
   const { item } = detail
   const w = useItems()
   const scroller = useRef<HTMLDivElement>(null)
-  // Every time the human sees an item is in its trace.
-  useEffect(() => {
-    w.markViewed(item.id)
-  }, [item.id, item.withYou])
   // New items arrive at the bottom, as in any chat.
   const count = detail.children.length
   useEffect(() => {

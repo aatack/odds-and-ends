@@ -90,6 +90,6 @@ export const findFocusAtom = atom(0)
 export const viewedAtom = atomWithStorage<string[]>('workflows.viewed', [], createJSONStorage(() => localStorage), { getOnInit: true })
 
 
-/** When each task was last opened here, this session only (not kept): Next passes over those seen in the last `VIEWED_LATELY_MS`. */
-export const viewedAtAtom = atom<Record<string, number>>({})
+/** When each task was last opened here (kept across reloads): Next passes over those seen in the last `VIEWED_LATELY_MS`. */
+export const viewedAtAtom = atomWithStorage<Record<string, number>>('workflows.viewedAt', {}, createJSONStorage(() => localStorage), { getOnInit: true })
 export const VIEWED_LATELY_MS = 30 * 60 * 1000

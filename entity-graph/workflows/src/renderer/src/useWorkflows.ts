@@ -170,10 +170,19 @@ export function useWorkflows() {
   const markViewed = useCallback(
     (id: string) => {
       setViewed((v) => [id, ...v.filter((x) => x !== id)].slice(0, 50))
-      setViewedAt((v) => ({ ...v, [id]: Date.now() }))
+      setViewedAt((v) => {
+        // Kept only while it still counts as lately.
+        const since = Date.now() - VIEWED_LATELY_MS
+        return { ...Object.fromEntries(Object.entries(v).filter(([, at]) => at > since)), [id]: Date.now() }
+      })
     },
     [setViewed, setViewedAt],
   )
+  // Every item on screen is viewed, whichever view shows it (its chat, its notes, its focus): Next passes over it.
+  const shownId = view?.kind === 'event' ? view.id : null
+  useEffect(() => {
+    if (shownId) markViewed(shownId)
+  }, [shownId, markViewed])
 
   return { recent, markViewed, overview, view, views, detail, catalog, selected, select, open, back, forward, next, act, actOn, error, empty }
 }
