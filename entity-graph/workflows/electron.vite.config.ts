@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
@@ -14,5 +15,17 @@ export default defineConfig({
     build: { rollupOptions: { input: { index: 'src/main/index.ts', backend: 'src/backend/index.ts' } } },
   },
   preload: { plugins: [externalizeDepsPlugin()] },
-  renderer: { plugins: [react(), tailwindcss()] },
+  // __BUILD__: the commit and time it was built from, which the Phone page shows (the phone gets this same build).
+  renderer: { plugins: [react(), tailwindcss()], define: { __BUILD__: JSON.stringify(build()) } },
 })
+
+function build(): string {
+  let commit = 'unknown'
+  try {
+    commit = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim()
+    if (execSync('git status --porcelain --untracked-files=no', { encoding: 'utf8' }).trim()) commit += ' with changes'
+  } catch {
+    // Not a checkout.
+  }
+  return `${commit}, built ${new Date().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}`
+}

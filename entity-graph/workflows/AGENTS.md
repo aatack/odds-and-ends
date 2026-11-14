@@ -92,15 +92,20 @@ window: there `window.workflows` is the preload's, as always.
   menu. Without `mobile` nothing changes: a new view takes the prop and keeps the desktop as it was.
 
 **Setting it up** (the person does this; agents never run `tailscale`'s writes: the app runs them only on the person's
-own press on the Phone page, which the phone itself may not call):
+own press on the Phone page, which the phone itself may not call). The Phone page is these steps, numbered, each
+holding what it needs and turning to a ✓ once the app can see it is done:
 
-1. Tailscale on this machine and on the phone, on the same tailnet, with MagicDNS and HTTPS certificates on. If
-   `tailscale serve` wants root, once: `sudo tailscale set --operator=$USER`.
-2. In the app: menu → Phone. Tick *Serve it on the tailnet*: the app runs `tailscale serve --bg --https=<tailnet port>
-   http://127.0.0.1:<port>` (and `… off` when unticked), and lets what comes through it in. Both ports are set there
-   (8443 on the tailnet by default, leaving 443 to whatever else this machine serves).
-3. On the phone: scan the QR code (or open `https://<machine>.<tailnet>.ts.net:8443/` and paste the token), sign in,
-   then Add to Home Screen.
+1. Tailscale on this machine and the phone, on the same tailnet, with MagicDNS and HTTPS certificates on.
+2. Once, in a terminal: `sudo tailscale set --operator=$USER`, so the app may run `tailscale serve`.
+3. Tick *Serve it on the tailnet*: the app runs `tailscale serve --bg --https=<tailnet port> http://127.0.0.1:<port>`
+   (and `… off` when unticked), and lets what comes through it in. Both ports are under *Ports* there (8443 on the
+   tailnet by default, leaving 443 to whatever else this machine serves).
+4. Scan the QR code with the phone (or open `https://<machine>.<tailnet>.ts.net:8443/` and paste the token).
+5. Sign in with your username.
+6. Add to Home Screen.
+
+The phone runs the build the app was started from (`.run/renderer`, which `npm start` rebuilds); the Phone page shows
+its commit (`__BUILD__`, defined in `electron.vite.config.ts`).
 
 ## Special rules
 
