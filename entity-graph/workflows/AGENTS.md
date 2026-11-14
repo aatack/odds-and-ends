@@ -76,6 +76,16 @@ window: there `window.workflows` is the preload's, as always.
   view off the stack). `openSource` asks the backend which source it is (`source`), and so checks the token;
   `closeSource` forgets the token; `setToken`/`token` exist only here. A refused token sends the phone back to
   signing in.
+- **What is shown is cached** (`state/cache.ts`, in the app's window too): the overview and each item's detail, as
+  the backend last said them. A view draws what is there at once (an item not fetched yet says Loading…), and the
+  backend is asked in the background: both at once after a change (one refresh at a time, and once more if changes
+  came meanwhile), an item alone when it is opened and is not there or may have changed. `/events` is listened to
+  once, not again per item. `api()` is `withOptimism`: sending in a chat, closing, reopening, assigning, renaming
+  and picking a view are drawn at once and stay until the refresh after the backend answers lands (taken back if it
+  fails); the composer clears at once and gets the text back if sending fails. In a browser it is also kept in local
+  storage (the overview and the latest details, per person), the person's waiting items are fetched ahead, and a
+  phone signed in before opens straight onto what was kept while it signs in behind (refused: back to signing in).
+  The phone's listener gzips what it answers when asked.
 - **Signing in on the phone** is `Start` with a token instead of a source. The Phone page's QR code (and its link)
   is the phone address with `#token=…` after it, which the browser never sends: opened, it fills the token in and
   signs in. `helpers/qr.ts` draws it (no dependency; checked against `qrencode` in the tests, where there is one).

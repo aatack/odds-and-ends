@@ -15,6 +15,8 @@ import { readFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type RequestListener, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { extname, join, normalize, sep } from 'node:path'
+import { promisify } from 'node:util'
+import { gzip as gzipCb } from 'node:zlib'
 import type { Engine } from '../engine/engine'
 import { OPEN_METHODS } from './api'
 
@@ -101,8 +103,15 @@ async function body(req: IncomingMessage): Promise<unknown> {
   return raw ? JSON.parse(raw) : []
 }
 
-const send = (res: ServerResponse, status: number, value: unknown) => {
-  res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(value ?? null))
+const gzip = promisify(gzipCb)
+/** Whether to gzip what goes back: on the phone's listener (a phone's network is slow; loopback is not), when asked. */
+const gzips = (req: IncomingMessage | undefined, size: number) => !!req && size > 1024 && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))
+
+const send = async (res: ServerResponse, status: number, value: unknown, req?: IncomingMessage) => {
+  const text = JSON.stringify(value ?? null)
+  const headers = { 'content-type': 'application/json', 'cache-control': 'no-store' }
+  if (gzips(req, text.length)) res.writeHead(status, { ...headers, 'content-encoding': 'gzip', vary: 'accept-encoding' }).end(await gzip(text))
+  else res.writeHead(status, headers).end(text)
 }
 
 export function handler(o: HandlerOptions): RequestListener {
@@ -113,7 +122,7 @@ export function handler(o: HandlerOptions): RequestListener {
         return send(res, 403, { error: 'This app is not open to the tailnet: turn it on from the Phone page, on the machine it runs on.' })
       if (path === '/health') return send(res, 200, { ok: true })
       const isApi = path === '/events' || path.startsWith('/rpc/')
-      if (!isApi && o.phone && req.method === 'GET') return await files(o.phone.files, path, res)
+      if (!isApi && o.phone && req.method === 'GET') return await files(o.phone.files, path, req, res)
       if (!tokenMatches(req, o.token())) return send(res, 401, { error: o.phone ? 'The token is wrong: copy it again from the Phone page.' : 'A bearer token is needed: see backend.json.' })
       if (path === '/events' && req.method === 'GET') return o.changes.add(req, res)
       const m = /^\/rpc\/(\w+)$/.exec(path)
@@ -128,13 +137,15 @@ export function handler(o: HandlerOptions): RequestListener {
       } catch (e) {
         return send(res, e instanceof TooLarge ? 413 : 400, { error: (e as Error).message })
       }
+      let out: unknown
       try {
-        send(res, 200, { result: await calls[m[1]](...(Array.isArray(args) ? args : [])) })
+        out = { result: await calls[m[1]](...(Array.isArray(args) ? args : [])) }
       } catch (e) {
-        send(res, 200, { error: (e as Error).message })
+        out = { error: (e as Error).message }
       }
+      await send(res, 200, out, o.phone ? req : undefined)
     } catch (e) {
-      if (!res.headersSent) send(res, 500, { error: (e as Error).message })
+      if (!res.headersSent) void send(res, 500, { error: (e as Error).message })
     }
   }
 }
@@ -155,7 +166,11 @@ const TYPES: Record<string, string> = {
 }
 
 /** The built app: a file in `root`, or (for a path that names no file) index.html; nothing outside `root`. */
-async function files(root: string | null, path: string, res: ServerResponse): Promise<void> {
+/** The built app's files as gzipped, by path: the hashed assets never change, so each is gzipped once. */
+const gzipped = new Map<string, Buffer>()
+const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.css', '.json', '.webmanifest', '.svg', '.ttf'])
+
+async function files(root: string | null, path: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!root) return void res.writeHead(404, { 'content-type': 'text/plain' }).end('The app is not built.')
   let decoded: string
   try {
@@ -168,12 +183,20 @@ async function files(root: string | null, path: string, res: ServerResponse): Pr
   if (file !== base && !file.startsWith(base + sep)) return void res.writeHead(403).end()
   const serve = async (f: string, fallback: string | null): Promise<void> => {
     try {
-      const data = await readFile(f)
+      let data: Buffer = await readFile(f)
       const name = f.slice(base.length + 1)
+      const immutable = name.startsWith('assets/')
+      const zip = COMPRESSIBLE.has(extname(f).toLowerCase()) && gzips(req, data.length)
+      if (zip) {
+        const kept = immutable ? gzipped.get(f) : undefined
+        data = kept ?? (await gzip(data))
+        if (immutable && !kept) gzipped.set(f, data)
+      }
       res.writeHead(200, {
         'content-type': TYPES[extname(f).toLowerCase()] ?? 'application/octet-stream',
         // The hashed assets never change; what names them is asked for afresh each time.
-        'cache-control': name.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+        'cache-control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
+        ...(zip ? { 'content-encoding': 'gzip', vary: 'accept-encoding' } : {}),
       })
       res.end(data)
     } catch {

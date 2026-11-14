@@ -40,7 +40,7 @@ import { BotsPage, botStatus } from './BotsPage'
 import { BotView } from './BotView'
 import { Bot, SquareCode, User as UserIcon } from 'lucide-react'
 import { everyone, nameOf, sourceAtom, userAtom, type Someone } from './people'
-import { Start } from './Start'
+import { begin, cameByLink, Start } from './Start'
 import { inBrowser, REFUSED_EVENT, useMobile } from './phone'
 import { PhonePage } from './PhonePage'
 
@@ -55,7 +55,19 @@ const newTopicTitle = (at = new Date()) =>
 export function Root() {
   const [user, setUser] = useAtom(userAtom)
   const [source, setSource] = useAtom(sourceAtom)
-  const [open, setOpen] = useState<string | null>(null)
+  // On the phone, signed in before (and not opened from a new link): straight into the app, drawn from what was kept
+  // (state/cache.ts), while the backend is asked in the background; refused, it is back to signing in.
+  const [resumed] = useState(() => inBrowser && !!user && !!source && !!api().token?.() && !cameByLink())
+  const [open, setOpen] = useState<string | null>(() => {
+    if (!resumed) return null
+    api().setUser(user)
+    return `${source}\n${user}`
+  })
+  useEffect(() => {
+    if (resumed && user && source) void begin({ user, source }).catch(() => setOpen(null))
+    // Once, as the page opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // The views on the stack are a source's: another source starts afresh.
   const setViews = useSetAtom(viewsAtom)
   const setForwards = useSetAtom(forwardAtom)
@@ -404,8 +416,8 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
     return frame(
       <div className="view">
         <ViewHeader canGoBack={w.views.length > 0} onBack={w.back} mobile={mobile} />
-        {/* Home waits a moment for who is signed in. */}
-        {!home && <div className="empty">That item is not there any more.</div>}
+        {/* Home waits a moment for who is signed in; any other item, for its first fetch. */}
+        {!home && (w.loading ? <div className="empty muted">Loading…</div> : <div className="empty">That item is not there any more.</div>)}
       </div>,
     )
   const e = d.info

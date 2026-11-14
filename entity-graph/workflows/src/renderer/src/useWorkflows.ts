@@ -1,7 +1,8 @@
 import { useAtom } from 'jotai'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Catalog, ItemInfoDetail, Overview, WorkflowsAPI } from '../../shared/types'
-import { browserApi } from './phone'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import type { Catalog, WorkflowsAPI } from '../../shared/types'
+import { browserApi, inBrowser } from './phone'
+import { Cache, withOptimism } from './state/cache'
 import { forwardAtom, HISTORY_LIMIT, reachedAtom, sameView, VIEWED_LATELY_MS, viewedAtAtom, viewedAtom, viewsAtom, type View } from './views'
 
 declare global {
@@ -10,40 +11,42 @@ declare global {
   }
 }
 
-let browser: WorkflowsAPI | null = null
-/** The app's calls: the preload's in the app's window; in a browser (the phone), straight to the backend (phone.ts). */
-export const api = (): WorkflowsAPI => window.workflows ?? (browser ??= browserApi())
+let raw: WorkflowsAPI | null = null
+let wrapped: WorkflowsAPI | null = null
+const rawApi = (): WorkflowsAPI => (raw ??= window.workflows ?? browserApi())
+/** What the app shows, kept between draws (state/cache.ts); on the phone, across reloads too. */
+export const cache = new Cache(rawApi, inBrowser ? localStorage : null)
+/**
+ * The app's calls: the preload's in the app's window; in a browser (the phone), straight to the backend (phone.ts).
+ * Its common changes are drawn at once, before the backend answers (`withOptimism`).
+ */
+export const api = (): WorkflowsAPI => (wrapped ??= withOptimism(rawApi(), cache))
 
 /** Everything the app shows, kept in step with the main process. */
 export function useWorkflows() {
-  const [overview, setOverview] = useState<Overview>({
-    me: { id: '', name: '' },
-    items: [],
-    bots: [],
-    users: [],
-    recentAssignees: [],
-    scripts: [],
-  })
+  const shown = useSyncExternalStore(cache.subscribe, cache.get)
+  const overview = useMemo(() => shown.overview ?? cache.overview(), [shown.overview])
   const [views, setViews] = useAtom(viewsAtom)
   const [forwards, setForwards] = useAtom(forwardAtom)
   const view = views[views.length - 1] ?? null
   // Home (the items view, or nothing on the stack) is the person signed in: their item, as any other is shown.
   const selected = view && 'id' in view ? view.id : overview.me.id || null
-  const [detail, setDetail] = useState<ItemInfoDetail | null>(null)
+  // What is here for it at once: undefined while it is being fetched the first time.
+  const known = selected ? shown.details[selected] : null
+  const detail = known ?? null
+  const loading = known === undefined
   const [error, setError] = useState<string | null>(null)
   const [empty, setEmpty] = useState(false)
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   useEffect(() => void api().catalog().then(setCatalog), [])
 
-  const refresh = useCallback(async () => {
-    setOverview(await api().overview())
-    setDetail(selected ? await api().itemInfoDetail(selected) : null)
-  }, [selected])
-
+  // Listened to once: each change refreshes what is here (the item on screen with it).
   useEffect(() => {
-    void refresh()
-    return api().onChange(() => void refresh())
-  }, [refresh])
+    void cache.refresh()
+    return api().onChange(() => void cache.refresh())
+  }, [])
+  // The item on screen: drawn from here at once, fetched if it is not here or may have changed.
+  useEffect(() => cache.show(selected ?? null), [selected])
 
   /** Runs a change, showing what went wrong if it fails. */
   const act = useCallback(async (fn: () => Promise<unknown>) => {
@@ -143,7 +146,8 @@ export function useWorkflows() {
   const moveOn = useCallback(
     async (id: string) => {
       if (selected !== id) return
-      const item = (await api().itemInfoDetail(id))?.item?.item
+      // As drawn: a change made here shows at once (state/cache.ts), so this needs no asking.
+      const item = cache.get().details[id]?.item?.item
       if (item && !item.closed) return
       const to = await api().next([...viewedLately(), id])
       if (to) open({ kind: 'event', id: to }, { direct: false })
@@ -184,5 +188,5 @@ export function useWorkflows() {
     if (shownId) markViewed(shownId)
   }, [shownId, markViewed])
 
-  return { recent, markViewed, overview, view, views, detail, catalog, selected, select, open, back, forward, next, act, actOn, error, empty }
+  return { recent, markViewed, overview, view, views, detail, loading, catalog, selected, select, open, back, forward, next, act, actOn, error, empty }
 }

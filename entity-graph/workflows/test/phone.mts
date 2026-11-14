@@ -14,7 +14,9 @@ import { Admin } from '../src/engine/admin.ts'
 import { Engine } from '../src/engine/engine.ts'
 import type { Mcp } from '../src/engine/mcp.ts'
 import { encodeQr } from '../src/renderer/src/helpers/qr.ts'
+import { Cache, withOptimism } from '../src/renderer/src/state/cache.ts'
 import { httpApi, TOKEN_KEY, type KeptStrings } from '../src/renderer/src/transport.ts'
+import type { Item, ItemInfoDetail, Overview, WorkflowsAPI } from '../src/shared/types.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'workflows-phone-'))
 // A stand-in for tailscale: what it serves, by HTTPS port.
@@ -223,6 +225,21 @@ const bearer = (t: string) => ({ authorization: `Bearer ${t}` })
   assert.equal(http.token!(), null, 'disconnecting forgets the token')
 }
 
+// ---- 4b. Gzip: what the phone's listener answers, when asked; the app's listener as before ----
+{
+  const raw = (url: string, t: string) =>
+    new Promise<string | undefined>((resolve, reject) =>
+      request(`${url}/rpc/catalog`, { method: 'POST', headers: { 'accept-encoding': 'gzip', 'x-workflows-user': 'human', ...bearer(t) } }, (res) => {
+        res.resume()
+        resolve(res.headers['content-encoding'])
+      })
+        .on('error', reject)
+        .end('[]'),
+    )
+  assert.equal(await raw(phoneUrl, engine.settings.phoneToken()), 'gzip', "the phone's answers are gzipped")
+  assert.equal(await raw(deskUrl, 'desk-token'), undefined, "the app's are not")
+}
+
 // ---- 5. The phone's port: taken, it says so rather than failing the backend ----
 {
   const blocker = createServer()
@@ -254,6 +271,75 @@ if (qrencode) {
     )
   }
 } else console.log('phone: the QR check skipped (no qrencode)')
+
+// ---- 7. The cache: drawn at once, the backend in the background, a change shown before it is answered ----
+{
+  const item = (id: string, over: Partial<Item> = {}): Item => ({
+    id, type: 'topic', title: id, parentId: null, open: true, closed: false, owner: 'human', blockers: [], assignees: ['human'],
+    withYou: true, bot: null, since: 0, createdAt: 0, closedAt: null, ...over,
+  })
+  let server: Overview = { me: { id: 'human', name: 'human' }, items: [item('a'), item('b')], bots: [], users: [], recentAssignees: [], scripts: [] }
+  const detailOf = (id: string): ItemInfoDetail => ({
+    info: { id, closed: server.items.find((i) => i.id === id)!.closed, params: { text: id }, summary: id } as unknown as ItemInfoDetail['info'],
+    parent: null, pins: [], pinnedIn: [], typeScripts: [],
+    item: { item: server.items.find((i) => i.id === id)!, parent: null, children: [] },
+  })
+  let release: (() => void) | null = null
+  let fail = false
+  const calls: string[] = []
+  const fake = {
+    overview: async () => (calls.push('overview'), structuredClone(server)),
+    itemInfoDetail: async (id: string) => (calls.push(`detail ${id}`), detailOf(id)),
+    setUser: () => {},
+    close: async (id: string) => {
+      // Held until released, as a slow network would.
+      await new Promise<void>((r) => (release = r))
+      if (fail) throw new Error('refused')
+      server = { ...server, items: server.items.map((i) => (i.id === id ? { ...i, closed: true, assignees: [], withYou: false } : i)) }
+    },
+  } as unknown as WorkflowsAPI
+  const kept = new Map<string, string>()
+  const storage = { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) } as Storage
+  const cache = new Cache(() => fake, storage)
+  const api = withOptimism(fake, cache)
+  api.setUser('human')
+  assert.equal(cache.get().overview, null, 'nothing kept yet')
+  cache.show('a')
+  await cache.refresh()
+  assert.equal(cache.get().overview?.items.length, 2)
+  assert.ok(cache.get().details.a, 'the item on screen fetched with it')
+  // Fetched ahead: the others waiting on the person.
+  await new Promise((r) => setTimeout(r, 10))
+  assert.ok(cache.get().details.b, 'and those waiting on the person, ahead')
+  // Opening one already here asks nothing before it is drawn.
+  calls.length = 0
+  cache.show('b')
+  assert.deepEqual(calls, [], 'opened from what is here')
+  // A close: drawn at once, before the backend answers.
+  const closing = api.close('b')
+  assert.equal(cache.get().details.b?.item?.item.closed, true, 'closed at once')
+  assert.equal(cache.get().overview?.items.find((i) => i.id === 'b')?.withYou, false, 'and off the list at once')
+  release!()
+  await closing
+  await new Promise((r) => setTimeout(r, 10))
+  assert.equal(cache.get().details.b?.item?.item.closed, true, 'and still, once the backend has it')
+  // One that fails is taken back.
+  fail = true
+  const failing = api.close('a')
+  assert.equal(cache.get().details.a?.item?.item.closed, true)
+  release!()
+  await assert.rejects(failing, /refused/)
+  assert.equal(cache.get().details.a?.item?.item.closed, false, 'a refused change is taken back')
+  // Kept: another start opens onto it.
+  await new Promise((r) => setTimeout(r, 1100))
+  const again = new Cache(() => fake, storage)
+  again.setUser('human')
+  assert.equal(again.get().overview?.items.length, 2, 'opens onto what was kept')
+  assert.ok(again.get().details.a, 'with the details shown')
+  const other = new Cache(() => fake, storage)
+  other.setUser('someone')
+  assert.equal(other.get().overview, null, "but not someone else's")
+}
 
 phone.close()
 desk.close()

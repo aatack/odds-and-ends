@@ -15,8 +15,8 @@ export interface Session {
  */
 export async function begin(s: Session & { token?: string }): Promise<Session> {
   if (s.token !== undefined) api().setToken?.(s.token)
-  const file = await api().openSource(s.source)
-  const user = await api().signIn(s.user)
+  // Both at once: on the phone each is a trip over the network.
+  const [file, user] = await Promise.all([api().openSource(s.source), api().signIn(s.user)])
   api().setUser(user.id)
   // In a browser the source is the backend's, which it says.
   return { user: user.id, source: inBrowser ? file : s.source }
@@ -24,6 +24,9 @@ export async function begin(s: Session & { token?: string }): Promise<Session> {
 
 // A link from the Phone page brings its token: taken as the page loads, before anything asks.
 let linked = inBrowser ? tokenFromLink() : null
+
+/** Whether the page was opened from the Phone page's link, with a token to sign in with. */
+export const cameByLink = (): boolean => linked !== null
 
 /**
  * The first screen: a username and a source, both needed. In a browser (the phone), a username and the token from

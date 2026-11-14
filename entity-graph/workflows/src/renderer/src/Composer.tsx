@@ -98,7 +98,10 @@ export function Composer({
   }
   const send = async () => {
     if (empty) return void (await defaults[at]?.run())
-    if (await onSend(preset.id, text)) setText('')
+    // Cleared at once (what is sent shows in the chat straight away); put back if it fails, unless something new is typed.
+    const sent = text
+    setText('')
+    if (!(await onSend(preset.id, sent))) setDrafts((d) => (d[draftKey] ? d : { ...d, [draftKey]: sent }))
   }
   // Recording: each finished utterance goes as a note, as if typed and sent (it hands the task to nobody).
   const recorder = useRecorder((said) => void onSend('note', said))
