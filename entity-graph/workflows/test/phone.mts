@@ -21,12 +21,17 @@ const dir = mkdtempSync(join(tmpdir(), 'workflows-phone-'))
 const served = new Map<string, string>()
 // A folder served too, as real Tailscale then refuses any change to a non-root user, operator or not.
 let folder: string | null = null
+let hideFolder = false
 const exec = async (cmd: string, args: string[]) => {
-  if (cmd === 'tailscale' && args[0] === 'status') return JSON.stringify({ Self: { DNSName: 'laptop.tail1234.ts.net.' } })
+  if (cmd === 'tailscale' && args[0] === 'status')
+    return JSON.stringify({
+      Self: { DNSName: 'laptop.tail1234.ts.net.' },
+      Peer: { a: { HostName: 'pixel', OS: 'android', Online: true }, b: { HostName: 'desk', OS: 'linux', Online: true } },
+    })
   if (cmd === 'tailscale' && args[0] === 'serve' && args[1] === 'status')
     return JSON.stringify({
       TCP: Object.fromEntries([...served.keys()].map((p) => [p, { HTTPS: true }])),
-      ...(folder ? { Web: { 'laptop.tail1234.ts.net:443': { Handlers: { '/': { Path: folder } } } } } : {}),
+      ...(folder && !hideFolder ? { Web: { 'laptop.tail1234.ts.net:443': { Handlers: { '/': { Path: folder } } } } } : {}),
     })
   if (cmd === 'tailscale' && args[0] === 'serve' && folder)
     throw new Error("sending serve config: 401 Unauthorized: must be root, or be an operator and able to run 'sudo tailscale' to serve a path or Unix socket")
@@ -137,10 +142,17 @@ const bearer = (t: string) => ({ authorization: `Bearer ${t}` })
   folder = '/home/me/site'
   const blocked = (await (await rpc(deskUrl, 'phone', [], bearer('desk-token'))).json()) as { result: { servedFolders: { removeCommand: string }[] } }
   assert.deepEqual(blocked.result.servedFolders.map((f) => f.removeCommand), ['sudo tailscale serve --https=443 --set-path=/ off'])
+  assert.deepEqual((blocked.result as unknown as { phones: unknown }).phones, [{ name: 'pixel', os: 'android', online: true }], 'the phones on the tailnet')
   const refused = (await (await rpc(deskUrl, 'setPhoneTailnet', [true], bearer('desk-token'))).json()) as { error: string }
   assert.match(refused.error, /already serves a folder here \(\/home\/me\/site at https:\/\/laptop\.tail1234\.ts\.net:443\/\)/)
   assert.match(refused.error, /sudo tailscale serve --https=443 --set-path=\/ off/)
   assert.equal(engine.settings.phoneTailnet(), false, 'and it stays off')
+  // A folder Tailscale won't say it serves: the failure still says operator is not enough, and gives the sudo command.
+  hideFolder = true
+  const unseen = (await (await rpc(deskUrl, 'setPhoneTailnet', [true], bearer('desk-token'))).json()) as { error: string }
+  assert.match(unseen.error, /being operator is not enough/)
+  assert.match(unseen.error, /sudo tailscale serve --bg --https=8443 http:\/\/127\.0\.0\.1:\d+/)
+  hideFolder = false
   folder = null
   // The app's own listener is reached only from this machine, as before: it has no tailnet gate, as nothing forwards to it.
   assert.equal((await rpc(deskUrl, 'overview', [], { 'x-forwarded-for': '1.2.3.4', ...bearer('desk-token') })).status, 200)

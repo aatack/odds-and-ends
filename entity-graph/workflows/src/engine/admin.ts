@@ -123,9 +123,16 @@ export class Admin {
     let tailnetName: string | null = null
     let serving: boolean | null = null
     let servedFolders: PhoneView['servedFolders'] = []
+    let phones: PhoneView['phones'] = []
     try {
-      const status = JSON.parse(await this.engine.exec('tailscale', ['status', '--json'])) as { Self?: { DNSName?: string } }
+      const status = JSON.parse(await this.engine.exec('tailscale', ['status', '--json'])) as {
+        Self?: { DNSName?: string }
+        Peer?: Record<string, { HostName?: string; DNSName?: string; OS?: string; Online?: boolean }>
+      }
       tailnetName = status.Self?.DNSName?.replace(/\.$/, '') || null
+      phones = Object.values(status.Peer ?? {})
+        .filter((p) => /^(android|ios)$/i.test(p.OS ?? ''))
+        .map((p) => ({ name: p.HostName || p.DNSName?.split('.')[0] || '?', os: p.OS!, online: !!p.Online }))
       // Whether Tailscale serves this port now: some HTTPS handler on it.
       const serve = JSON.parse((await this.engine.exec('tailscale', ['serve', 'status', '--json'])) || '{}') as ServeConfig
       serving = !!serve.TCP?.[String(tailnetPort)]
@@ -143,6 +150,7 @@ export class Admin {
       tailnetPort,
       serving,
       servedFolders,
+      phones,
       serveCommand: `tailscale serve --bg --https=${tailnetPort} http://127.0.0.1:${port}`,
       phoneUrl: tailnetName ? `https://${tailnetName}:${tailnetPort}/` : null,
     }
@@ -172,7 +180,16 @@ export class Admin {
               `only root may change what it serves, even if you are its operator. Remove it in a shell, then tick the box again:\n` +
               folders.map((f) => f.removeCommand).join('\n'),
           )
-        throw new Error(`Tailscale would not serve it: ${message}\nIf it asks for root, run once in a shell: sudo tailscale set --operator=$USER`)
+        const serve = `sudo tailscale serve --bg --https=${s.phoneTailnetPort()} http://127.0.0.1:${s.phonePort()}`
+        throw new Error(
+          /path or Unix socket/i.test(message)
+            ? `Tailscale would not serve it: ${message}\n` +
+                `If you have already run sudo tailscale set --operator=$USER, being operator is not enough here: while Tailscale serves a ` +
+                `folder or a Unix socket anywhere on this machine, only root may change what it serves. See what it serves with ` +
+                `tailscale serve status, and remove the folder with sudo tailscale serve --https=<port> --set-path=<path> off. ` +
+                `Or serve it as root instead (the box then shows it as served):\n${serve}`
+            : `Tailscale would not serve it: ${message}\nIf it asks for root, run once in a shell: sudo tailscale set --operator=$USER`,
+        )
       }
       s.set('phone.tailnet', true)
     } else {

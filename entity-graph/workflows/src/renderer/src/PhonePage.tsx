@@ -44,6 +44,8 @@ function Step({ n, title, done, children }: { n: number; title: string; done?: b
 export function PhonePage({ mobile }: { mobile: boolean }) {
   const [view, setView] = useState<PhoneView | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // What went wrong serving it (the box, the ports), shown in that step rather than at the top.
+  const [serveError, setServeError] = useState<string | null>(null)
   const [port, setPort] = useState('')
   const [tailnetPort, setTailnetPort] = useState('')
   const [showToken, setShowToken] = useState(false)
@@ -55,21 +57,25 @@ export function PhonePage({ mobile }: { mobile: boolean }) {
   }, [])
   useEffect(() => void refresh().catch((e) => setError((e as Error).message)), [refresh])
 
-  const act = async (fn: () => Promise<unknown>) => {
+  const act = async (fn: () => Promise<unknown>, show = setError) => {
     setError(null)
+    setServeError(null)
     try {
       await fn()
       await refresh()
     } catch (e) {
-      setError((e as Error).message.replace(/^Error invoking remote method '\w+': (Error: )?/, ''))
+      show((e as Error).message.replace(/^Error invoking remote method '\w+': (Error: )?/, ''))
+      await refresh().catch(() => {})
     }
   }
+  const serveAct = (fn: () => Promise<unknown>) => act(fn, setServeError)
 
   if (error && !view) return <div className="error">{error}</div>
   if (!view) return <div className="muted">Loading…</div>
   // The link carries the token after the #, which the browser never sends: opened, it signs the phone in.
   const link = view.phoneUrl ? `${view.phoneUrl}#token=${encodeURIComponent(view.token)}` : null
   const served = view.tailnet && view.serving === true && !view.error
+  const phoneOnline = view.phones.some((p) => p.online)
   return (
     <div className={`page ${mobile ? 'mobile' : ''}`}>
       {error && <div className="error">{error}</div>}
@@ -82,9 +88,9 @@ export function PhonePage({ mobile }: { mobile: boolean }) {
         </p>
         {view.error && <p className="error-text">{view.error}</p>}
         <ol className="phone-steps">
-          <Step n={1} title="Tailscale on this machine and the phone" done={!!view.tailnetName}>
+          <Step n={1} title="Tailscale on this machine" done={!!view.tailnetName}>
             <p className="muted">
-              Install Tailscale on both and sign in to the same tailnet. In the{' '}
+              Install Tailscale here and sign in. In the{' '}
               <a href="https://login.tailscale.com/admin/dns" target="_blank" rel="noreferrer">
                 admin console's DNS page
               </a>
@@ -103,25 +109,44 @@ export function PhonePage({ mobile }: { mobile: boolean }) {
             </p>
           </Step>
 
-          <Step n={2} title="Let the app run Tailscale (once, in a terminal)" done={served}>
+          <Step n={2} title="Tailscale on the phone, switched on" done={phoneOnline}>
+            <p className="muted">
+              Install the Tailscale app on the phone (App Store or Play Store), sign in with the same account as this machine, and switch it
+              on (the toggle on its main screen; Android shows a key in the status bar). It has to be on whenever you use YAWN on the phone:
+              without it the phone can't reach this machine, and the browser says it can't open the page.
+            </p>
+            <p className="muted">
+              {view.phones.length === 0
+                ? view.serving === null
+                  ? "Tailscale can't be asked here, so the phone can't be checked."
+                  : 'No phone on the tailnet yet.'
+                : view.phones.map((p) => `${p.name} (${p.os}): ${p.online ? 'connected' : 'not connected: switch Tailscale on in it'}`).join('; ')}{' '}
+              <button data-ui onClick={() => act(async () => {})}>
+                Check again
+              </button>
+            </p>
+          </Step>
+
+          <Step n={3} title="Let the app run Tailscale (once, in a terminal)" done={served}>
             <p className="muted">Tailscale wants root to serve unless you are its operator. Run this once; it lasts:</p>
             <Copyable value="sudo tailscale set --operator=$USER" block language="bash" />
             {view.servedFolders.length > 0 && (
               <>
                 <p className="error-text">
                   Tailscale also serves a folder here ({view.servedFolders.map((f) => `${f.folder} at ${f.address}`).join('; ')}). While it does,
-                  only root may change what Tailscale serves, operator or not, so the box in step 3 will fail. Remove it once:
+                  only root may change what Tailscale serves, operator or not, so the box in step 4 will fail. Remove it once:
                 </p>
                 <Copyable value={view.servedFolders.map((f) => f.removeCommand).join('\n')} block language="bash" />
               </>
             )}
           </Step>
 
-          <Step n={3} title="Tick this box" done={served}>
+          <Step n={4} title="Tick this box" done={served}>
             <label className="row-inline phone-toggle">
-              <input type="checkbox" checked={view.tailnet} onChange={(e) => void act(() => api().setPhoneTailnet(e.target.checked))} />
+              <input type="checkbox" checked={view.tailnet} onChange={(e) => void serveAct(() => api().setPhoneTailnet(e.target.checked))} />
               Serve it on the tailnet
             </label>
+            {serveError && <pre className="error-text phone-error">{serveError}</pre>}
             <p className="muted">
               {view.serving === null
                 ? "Tailscale can't be asked here, so this can't be checked."
@@ -141,7 +166,7 @@ export function PhonePage({ mobile }: { mobile: boolean }) {
                   <div className="port">
                     <Form schema={{ type: 'string' }} value={port} setValue={(v) => setPort(typeof v === 'string' ? v : '')} />
                   </div>
-                  {port !== String(view.port) && <button data-ui onClick={() => act(() => api().setPhonePort(Number(port)))}>Save</button>}
+                  {port !== String(view.port) && <button data-ui onClick={() => serveAct(() => api().setPhonePort(Number(port)))}>Save</button>}
                 </div>
                 <span>Tailnet (HTTPS)</span>
                 <div className="row-inline">
@@ -149,7 +174,7 @@ export function PhonePage({ mobile }: { mobile: boolean }) {
                     <Form schema={{ type: 'string' }} value={tailnetPort} setValue={(v) => setTailnetPort(typeof v === 'string' ? v : '')} />
                   </div>
                   {tailnetPort !== String(view.tailnetPort) && (
-                    <button data-ui onClick={() => act(() => api().setPhoneTailnetPort(Number(tailnetPort)))}>Save</button>
+                    <button data-ui onClick={() => serveAct(() => api().setPhoneTailnetPort(Number(tailnetPort)))}>Save</button>
                   )}
                 </div>
               </div>
@@ -158,14 +183,17 @@ export function PhonePage({ mobile }: { mobile: boolean }) {
             </details>
           </Step>
 
-          <Step n={4} title="Scan this with the phone's camera">
+          <Step n={5} title="Scan this with the phone's camera">
             {link ? (
               <div className="phone-connect">
                 <QrCode text={link} size={mobile ? 180 : 220} />
                 <div className="phone-connect-text">
                   <p className="muted">
-                    It opens YAWN on the phone with the token filled in.{served ? '' : ' It answers only once step 3 is done.'} Treat the code like a
-                    password.
+                    It opens YAWN on the phone with the token filled in. Treat the code like a password.
+                  </p>
+                  <p className="muted">
+                    If the phone says it can't open the page: switch Tailscale on in the phone (step 2), and check step 4 says Served. The first
+                    visit can take a few seconds more while Tailscale gets the certificate.
                   </p>
                   <p className="muted">Or open this address on the phone and paste the token:</p>
                   <div className="kv">
@@ -190,11 +218,11 @@ export function PhonePage({ mobile }: { mobile: boolean }) {
             )}
           </Step>
 
-          <Step n={5} title="Sign in on the phone">
+          <Step n={6} title="Sign in on the phone">
             <p className="muted">Type your username and press Sign in; the token is already there.</p>
           </Step>
 
-          <Step n={6} title="Add it to the home screen">
+          <Step n={7} title="Add it to the home screen">
             <p className="muted">
               iPhone, in Safari: Share, then <b>Add to Home Screen</b>. Android, in Chrome: ⋮, then <b>Install app</b> (or Add to Home screen).
               Open YAWN from that icon from now on.

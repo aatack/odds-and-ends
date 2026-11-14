@@ -95,17 +95,20 @@ window: there `window.workflows` is the preload's, as always.
 own press on the Phone page, which the phone itself may not call). The Phone page is these steps, numbered, each
 holding what it needs and turning to a ✓ once the app can see it is done:
 
-1. Tailscale on this machine and the phone, on the same tailnet, with MagicDNS and HTTPS certificates on.
-2. Once, in a terminal: `sudo tailscale set --operator=$USER`, so the app may run `tailscale serve`.
-   If Tailscale also serves a folder (a `Path` handler, anywhere), it lets only root change what it serves, operator
+1. Tailscale on this machine, with MagicDNS and HTTPS certificates on.
+2. Tailscale on the phone, signed in to the same tailnet and switched on (it must be on whenever the phone uses YAWN;
+   otherwise its browser just can't open the page). The step lists the tailnet's Android and iOS devices and whether
+   each is connected (`tailscale status --json`'s peers).
+3. Once, in a terminal: `sudo tailscale set --operator=$USER`, so the app may run `tailscale serve`.
+   If Tailscale also serves a folder or a Unix socket (anywhere), it lets only root change what it serves, operator
    or not; the Phone page names any such folder and gives the `sudo tailscale serve --https=<port> --set-path=<path> off`
-   that removes it.
-3. Tick *Serve it on the tailnet*: the app runs `tailscale serve --bg --https=<tailnet port> http://127.0.0.1:<port>`
+   that removes it, and the error from the box says so too (with the `sudo` serve command as the other way out).
+4. Tick *Serve it on the tailnet*: the app runs `tailscale serve --bg --https=<tailnet port> http://127.0.0.1:<port>`
    (and `… off` when unticked), and lets what comes through it in. Both ports are under *Ports* there (8443 on the
-   tailnet by default, leaving 443 to whatever else this machine serves).
-4. Scan the QR code with the phone (or open `https://<machine>.<tailnet>.ts.net:8443/` and paste the token).
-5. Sign in with your username.
-6. Add to Home Screen.
+   tailnet by default, leaving 443 to whatever else this machine serves). What goes wrong here shows in this step.
+5. Scan the QR code with the phone (or open `https://<machine>.<tailnet>.ts.net:8443/` and paste the token).
+6. Sign in with your username.
+7. Add to Home Screen.
 
 The phone runs the build the app was started from (`.run/renderer`, which `npm start` rebuilds); the Phone page shows
 its commit (`__BUILD__`, defined in `electron.vite.config.ts`).

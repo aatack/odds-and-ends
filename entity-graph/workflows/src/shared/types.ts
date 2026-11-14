@@ -356,6 +356,8 @@ export interface PhoneView {
    * (or an operator with passwordless sudo) change what it serves, so the app can't; each with the command that removes it.
    */
   servedFolders: { address: string; folder: string; removeCommand: string }[]
+  /** Phones (Android and iOS devices) on the tailnet, as Tailscale sees them, and whether each is connected now. */
+  phones: { name: string; os: string; online: boolean }[]
   /** What the app runs to serve it on the tailnet (to run by hand, if it can't). */
   serveCommand: string
   /** Where the phone opens it: on the tailnet, if this machine has a name there. */
