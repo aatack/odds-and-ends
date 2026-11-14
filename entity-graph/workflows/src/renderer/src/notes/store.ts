@@ -65,8 +65,8 @@ let chain: Promise<void> = Promise.resolve()
 
 async function send(op: Op): Promise<void> {
   if (op.kind === 'create') {
-    // An open note is only a checkbox: nobody owns it or is given it.
-    const [id] = await api().addItems(resolve(op.parent), [{ type: 'topic', params: op.params, ...(op.params.open === true ? { bare: true } : {}) }], 'notes')
+    // A note made here is only its values: nobody owns it or is given it, open or not.
+    const [id] = await api().addItems(resolve(op.parent), [{ type: 'topic', params: op.params, bare: true }], 'notes')
     real.set(op.temp, id)
   } else if (op.kind === 'set') await api().setValue(resolve(op.id), op.key, op.value)
   else if (op.kind === 'open') await api().setOpen(resolve(op.id), op.value)

@@ -18,7 +18,7 @@ export interface ItemSpec {
   ref?: string
   /** Pin it to the item it is added in, too. */
   pin?: boolean
-  /** Nobody owns it or is given it, whoever made it: only its values (an open note, made in the notes view). */
+  /** Nobody owns it or is given it, whoever made it: only its values (a note made in the notes view). */
   bare?: boolean
 }
 
