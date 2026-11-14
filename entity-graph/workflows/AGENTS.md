@@ -97,6 +97,9 @@ holding what it needs and turning to a ✓ once the app can see it is done:
 
 1. Tailscale on this machine and the phone, on the same tailnet, with MagicDNS and HTTPS certificates on.
 2. Once, in a terminal: `sudo tailscale set --operator=$USER`, so the app may run `tailscale serve`.
+   If Tailscale also serves a folder (a `Path` handler, anywhere), it lets only root change what it serves, operator
+   or not; the Phone page names any such folder and gives the `sudo tailscale serve --https=<port> --set-path=<path> off`
+   that removes it.
 3. Tick *Serve it on the tailnet*: the app runs `tailscale serve --bg --https=<tailnet port> http://127.0.0.1:<port>`
    (and `… off` when unticked), and lets what comes through it in. Both ports are under *Ports* there (8443 on the
    tailnet by default, leaving 443 to whatever else this machine serves).

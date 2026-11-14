@@ -351,6 +351,11 @@ export interface PhoneView {
   tailnetPort: number
   /** Whether Tailscale serves that port now; null when Tailscale can't be asked. */
   serving: boolean | null
+  /**
+   * Folders Tailscale serves elsewhere on this machine (`Path` handlers). While there are any, Tailscale lets only root
+   * (or an operator with passwordless sudo) change what it serves, so the app can't; each with the command that removes it.
+   */
+  servedFolders: { address: string; folder: string; removeCommand: string }[]
   /** What the app runs to serve it on the tailnet (to run by hand, if it can't). */
   serveCommand: string
   /** Where the phone opens it: on the tailnet, if this machine has a name there. */

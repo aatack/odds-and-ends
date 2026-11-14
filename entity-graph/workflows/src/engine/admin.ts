@@ -122,12 +122,14 @@ export class Admin {
     const tailnetPort = s.phoneTailnetPort()
     let tailnetName: string | null = null
     let serving: boolean | null = null
+    let servedFolders: PhoneView['servedFolders'] = []
     try {
       const status = JSON.parse(await this.engine.exec('tailscale', ['status', '--json'])) as { Self?: { DNSName?: string } }
       tailnetName = status.Self?.DNSName?.replace(/\.$/, '') || null
       // Whether Tailscale serves this port now: some HTTPS handler on it.
-      const serve = JSON.parse((await this.engine.exec('tailscale', ['serve', 'status', '--json'])) || '{}') as { TCP?: Record<string, unknown> }
+      const serve = JSON.parse((await this.engine.exec('tailscale', ['serve', 'status', '--json'])) || '{}') as ServeConfig
       serving = !!serve.TCP?.[String(tailnetPort)]
+      servedFolders = servedFoldersOf(serve)
     } catch {
       // No Tailscale here, or it is down.
     }
@@ -140,6 +142,7 @@ export class Admin {
       tailnetName,
       tailnetPort,
       serving,
+      servedFolders,
       serveCommand: `tailscale serve --bg --https=${tailnetPort} http://127.0.0.1:${port}`,
       phoneUrl: tailnetName ? `https://${tailnetName}:${tailnetPort}/` : null,
     }
@@ -155,9 +158,21 @@ export class Admin {
       try {
         await this.engine.exec('tailscale', ['serve', '--bg', `--https=${s.phoneTailnetPort()}`, `http://127.0.0.1:${s.phonePort()}`])
       } catch (e) {
-        throw new Error(
-          `Tailscale would not serve it: ${(e as Error).message}\nIf it asks for root, run once in a shell: sudo tailscale set --operator=$USER`,
-        )
+        const message = (e as Error).message
+        let folders: PhoneView['servedFolders'] = []
+        try {
+          folders = servedFoldersOf(JSON.parse((await this.engine.exec('tailscale', ['serve', 'status', '--json'])) || '{}') as ServeConfig)
+        } catch {
+          // Tailscale can't be asked.
+        }
+        // Tailscale checks the whole serve config on every change: a folder served anywhere needs root, operator or not.
+        if (/path or Unix socket/i.test(message) && folders.length)
+          throw new Error(
+            `Tailscale already serves a folder here (${folders.map((f) => `${f.folder} at ${f.address}`).join('; ')}), and while it does, ` +
+              `only root may change what it serves, even if you are its operator. Remove it in a shell, then tick the box again:\n` +
+              folders.map((f) => f.removeCommand).join('\n'),
+          )
+        throw new Error(`Tailscale would not serve it: ${message}\nIf it asks for root, run once in a shell: sudo tailscale set --operator=$USER`)
       }
       s.set('phone.tailnet', true)
     } else {
@@ -191,4 +206,17 @@ export class Admin {
   regeneratePhoneToken(): void {
     this.engine.settings.regeneratePhoneToken()
   }
+}
+
+type ServeConfig = { TCP?: Record<string, unknown>; Web?: Record<string, { Handlers?: Record<string, { Path?: string }> }> }
+
+/** The folders a serve config serves (each a `Path` handler), with the command that takes each off. */
+function servedFoldersOf(serve: ServeConfig): PhoneView['servedFolders'] {
+  return Object.entries(serve.Web ?? {}).flatMap(([host, web]) =>
+    Object.entries(web.Handlers ?? {}).flatMap(([path, h]) => {
+      if (!h.Path) return []
+      const port = host.slice(host.lastIndexOf(':') + 1)
+      return [{ address: `https://${host}${path}`, folder: h.Path, removeCommand: `sudo tailscale serve --https=${port} --set-path=${path} off` }]
+    }),
+  )
 }

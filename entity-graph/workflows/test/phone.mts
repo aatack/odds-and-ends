@@ -19,9 +19,17 @@ import { httpApi, TOKEN_KEY, type KeptStrings } from '../src/renderer/src/transp
 const dir = mkdtempSync(join(tmpdir(), 'workflows-phone-'))
 // A stand-in for tailscale: what it serves, by HTTPS port.
 const served = new Map<string, string>()
+// A folder served too, as real Tailscale then refuses any change to a non-root user, operator or not.
+let folder: string | null = null
 const exec = async (cmd: string, args: string[]) => {
   if (cmd === 'tailscale' && args[0] === 'status') return JSON.stringify({ Self: { DNSName: 'laptop.tail1234.ts.net.' } })
-  if (cmd === 'tailscale' && args[0] === 'serve' && args[1] === 'status') return JSON.stringify({ TCP: Object.fromEntries([...served.keys()].map((p) => [p, { HTTPS: true }])) })
+  if (cmd === 'tailscale' && args[0] === 'serve' && args[1] === 'status')
+    return JSON.stringify({
+      TCP: Object.fromEntries([...served.keys()].map((p) => [p, { HTTPS: true }])),
+      ...(folder ? { Web: { 'laptop.tail1234.ts.net:443': { Handlers: { '/': { Path: folder } } } } } : {}),
+    })
+  if (cmd === 'tailscale' && args[0] === 'serve' && folder)
+    throw new Error("sending serve config: 401 Unauthorized: must be root, or be an operator and able to run 'sudo tailscale' to serve a path or Unix socket")
   if (cmd === 'tailscale' && args[0] === 'serve' && args.at(-1) === 'off') {
     served.delete(args[1].replace('--https=', ''))
     return ''
@@ -125,6 +133,15 @@ const bearer = (t: string) => ({ authorization: `Bearer ${t}` })
   await rpc(deskUrl, 'setPhoneTailnet', [false], bearer('desk-token'))
   assert.equal(served.size, 0, 'and stop')
   assert.equal((await rpc(phoneUrl, 'overview', [], forwarded)).status, 403, 'and refused again once it is not')
+  // A folder served elsewhere: the page names it, and the failure says how to remove it rather than to be operator.
+  folder = '/home/me/site'
+  const blocked = (await (await rpc(deskUrl, 'phone', [], bearer('desk-token'))).json()) as { result: { servedFolders: { removeCommand: string }[] } }
+  assert.deepEqual(blocked.result.servedFolders.map((f) => f.removeCommand), ['sudo tailscale serve --https=443 --set-path=/ off'])
+  const refused = (await (await rpc(deskUrl, 'setPhoneTailnet', [true], bearer('desk-token'))).json()) as { error: string }
+  assert.match(refused.error, /already serves a folder here \(\/home\/me\/site at https:\/\/laptop\.tail1234\.ts\.net:443\/\)/)
+  assert.match(refused.error, /sudo tailscale serve --https=443 --set-path=\/ off/)
+  assert.equal(engine.settings.phoneTailnet(), false, 'and it stays off')
+  folder = null
   // The app's own listener is reached only from this machine, as before: it has no tailnet gate, as nothing forwards to it.
   assert.equal((await rpc(deskUrl, 'overview', [], { 'x-forwarded-for': '1.2.3.4', ...bearer('desk-token') })).status, 200)
 }

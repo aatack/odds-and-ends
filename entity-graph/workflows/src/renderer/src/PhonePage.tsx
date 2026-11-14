@@ -106,6 +106,15 @@ export function PhonePage({ mobile }: { mobile: boolean }) {
           <Step n={2} title="Let the app run Tailscale (once, in a terminal)" done={served}>
             <p className="muted">Tailscale wants root to serve unless you are its operator. Run this once; it lasts:</p>
             <Copyable value="sudo tailscale set --operator=$USER" block language="bash" />
+            {view.servedFolders.length > 0 && (
+              <>
+                <p className="error-text">
+                  Tailscale also serves a folder here ({view.servedFolders.map((f) => `${f.folder} at ${f.address}`).join('; ')}). While it does,
+                  only root may change what Tailscale serves, operator or not, so the box in step 3 will fail. Remove it once:
+                </p>
+                <Copyable value={view.servedFolders.map((f) => f.removeCommand).join('\n')} block language="bash" />
+              </>
+            )}
           </Step>
 
           <Step n={3} title="Tick this box" done={served}>
