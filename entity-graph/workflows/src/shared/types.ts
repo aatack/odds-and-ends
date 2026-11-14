@@ -20,6 +20,11 @@ export interface ItemSpec {
   pin?: boolean
   /** Nobody owns it or is given it, whoever made it: only its values (a note made in the notes view). */
   bare?: boolean
+  /**
+   * Its id, chosen by the app (a UUID), so it can be drawn before the backend answers; a person's only. Added again
+   * (a change sent twice, as the phone does after losing the network), it is not added twice.
+   */
+  id?: string
 }
 
 /**
@@ -101,6 +106,8 @@ export interface Item {
   since: number
   createdAt: number
   closedAt: number | null
+  /** Its `display` value, if it has one: which view it opens on (shared/views.ts). */
+  display?: string
 }
 
 export interface ItemDetail {
@@ -122,6 +129,8 @@ export interface ItemInfoDetail {
   item: ItemDetail | null
   /** The open scripts its type owns (an `owns` link from the type's name, `topic`, `bot`…): run from its right pane. */
   typeScripts: ItemInfo[]
+  /** Drawn by the app from what the overview says of it, while the rest is fetched (never from the backend). */
+  loading?: boolean
 }
 
 /**
@@ -376,9 +385,11 @@ export interface WorkflowsAPI {
   /** An item as egdb holds it: its values and links. */
   inspect: (id: string) => Promise<Inspection>
   /** A new item, in `parentId` or in none. */
-  create: (title: string, parentId: string | null) => Promise<string>
+  /** With `id` (a UUID the app chose), it is that; made already, nothing is made again. */
+  create: (title: string, parentId: string | null, id?: string) => Promise<string>
   /** Sends from the chat input: `text` through a preset. */
-  send: (id: string, preset: string, text: string) => Promise<void>
+  /** With `commentId` (a UUID the app chose), what it adds has that id; sent already, nothing happens again. */
+  send: (id: string, preset: string, text: string, commentId?: string) => Promise<void>
   /** Ends a blocker without it happening. */
   cancel: (itemId: string) => Promise<void>
   /** Runs an open script that has no schedule, once. */

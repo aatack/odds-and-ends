@@ -396,6 +396,7 @@ export class Engine extends EventEmitter {
       since: touched,
       createdAt: r.created_at,
       closedAt: r.resolved_at,
+      ...(typeof r.params.display === 'string' ? { display: r.params.display } : {}),
     }
   }
 
@@ -1156,7 +1157,16 @@ export class Engine extends EventEmitter {
       // Prepared now, so a bad one fails the whole list; added in the topic as it is.
       for (const k of ['comments', 'notes'] as const) if (s.type === 'topic' && params[k]) params[k] = this.prepare(params[k] as ItemSpec[], author)
       const expanded = type.expand ? type.expand(params, author) : [{ type: s.type, params }]
-      return expanded.map((e, i) => ({ type: e.type as ItemSpec['type'], params: e.params, ref: i === 0 ? (s.ref ?? e.ref) : e.ref, ...(i === 0 && s.pin ? { pin: true } : {}), ...(i === 0 && s.bare ? { bare: true } : {}) }))
+      // An id of its own: a person's (the app's), never a bot's.
+      const id = s.id && author === 'human' ? checkedId(s.id) : undefined
+      return expanded.map((e, i) => ({
+        type: e.type as ItemSpec['type'],
+        params: e.params,
+        ref: i === 0 ? (s.ref ?? e.ref) : e.ref,
+        ...(i === 0 && s.pin ? { pin: true } : {}),
+        ...(i === 0 && s.bare ? { bare: true } : {}),
+        ...(i === 0 && id ? { id } : {}),
+      }))
     })
   }
 
@@ -1187,7 +1197,8 @@ export class Engine extends EventEmitter {
     const detached = parentId ? specs.filter((s) => (s.type === 'topic' && s.params.detached) || (s.pin && s.type !== 'topic' && SIT_IN_NONE.includes(s.type))) : []
     if (detached.length) return [...this.addNow(parentId, specs.filter((s) => !detached.includes(s)), createdBy, pinTo, via), ...this.addNow(null, detached, createdBy, parentId)]
     const keyed = (s: ItemSpec) => s.type === 'topic' && s.params.key && this.store.ofType('topic').some((r) => r.params.key === s.params.key)
-    specs = specs.filter((s) => !keyed(s))
+    // One with an id that is taken was added already (the same change, sent again).
+    specs = specs.filter((s) => !keyed(s) && !(s.id && this.row(s.id)))
     if (!parentId && specs.some((s) => !SIT_IN_NONE.includes(s.type))) throw new Error(`Only these can sit in no topic: ${SIT_IN_NONE.join(', ')}.`)
     if (parentId && specs.some((s) => s.type === 'bot' || s.type === 'user')) throw new Error('Bots and people sit in no topic.')
     if (parentId && this.row(parentId)?.type === 'bot' && specs.some((s) => s.type !== 'topic')) throw new Error("A bot's own chat holds only topics.")
@@ -1197,7 +1208,7 @@ export class Engine extends EventEmitter {
     specs.forEach((spec, i) => {
       const type = this.type(spec.type)
       // A person's id is their username.
-      const id = spec.type === 'user' ? String(spec.params.username) : randomUUID()
+      const id = spec.type === 'user' ? String(spec.params.username) : (spec.id ?? randomUUID())
       ids.push(id)
       const { assignees, comments, notes, detached: _d, ...params } = spec.params
       const topic = spec.type === 'topic'
@@ -1272,11 +1283,13 @@ export class Engine extends EventEmitter {
   /** A new open topic, in `parentId` or in none, with comments to start it off. */
   async create(
     title: string,
-    opts: { parentId?: string | null; key?: string; specs?: ItemSpec[]; assignees?: string[]; actor?: string; author?: Author } = {},
+    opts: { parentId?: string | null; key?: string; specs?: ItemSpec[]; assignees?: string[]; actor?: string; author?: Author; id?: string } = {},
   ): Promise<string | null> {
     const author = opts.author ?? 'human'
+    // Made already (the same change sent again): it is that one.
+    if (opts.id && this.row(checkedId(opts.id))) return opts.id
     const params = { text: title, open: true, ...(opts.key ? { key: opts.key } : {}), ...(opts.specs ? { comments: opts.specs } : {}), ...(opts.assignees ? { assignees: opts.assignees } : {}) }
-    const [spec] = this.prepare([{ type: 'topic', params }], author)
+    const [spec] = this.prepare([{ type: 'topic', params, ...(opts.id ? { id: opts.id } : {}) }], author)
     const [id] = this.add(opts.parentId ?? null, [spec], author === 'bot' ? 'bot' : (opts.actor ?? this.me()))
     await this.idle()
     return id ?? null
@@ -1288,7 +1301,9 @@ export class Engine extends EventEmitter {
    * own chat, the bot is, when nobody else is. Assigning a bot that has the item already assigns it again, which makes it
    * due there again.
    */
-  async send(itemId: string, presetId: string, text: string, actor = this.me()): Promise<void> {
+  async send(itemId: string, presetId: string, text: string, actor = this.me(), commentId?: string): Promise<void> {
+    // Sent already (the phone sends again what it can't tell landed): nothing more.
+    if (commentId && this.row(checkedId(commentId))) return
     const assignTo = presetId.startsWith('assign:') ? presetId.slice('assign:'.length) : null
     const preset = this.presets.find((p) => p.id === (assignTo ? 'note' : presetId))
     if (!preset) throw new Error(`No preset ${presetId}.`)
@@ -1299,6 +1314,7 @@ export class Engine extends EventEmitter {
     const own = this.row(itemId)?.type === 'bot' ? [itemId] : []
     const to = named.length ? named : own
     const specs = this.prepare(preset.build(text), 'human')
+    if (commentId && specs.length) specs[0] = { ...specs[0], id: commentId }
     if (!specs.length && !to.length) throw new Error('Nothing to send.')
     this.store.batch(() => {
       if (specs.length) this.add(itemId, specs, actor)
@@ -1600,4 +1616,10 @@ export class Engine extends EventEmitter {
     }).finally(() => this.checking.delete(id))
   }
 
+}
+
+/** An id the app chose: a UUID, or it is refused. */
+function checkedId(id: string): string {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error(`Not an id: ${id}.`)
+  return id
 }

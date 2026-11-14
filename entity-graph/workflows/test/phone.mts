@@ -15,7 +15,7 @@ import { Engine } from '../src/engine/engine.ts'
 import type { Mcp } from '../src/engine/mcp.ts'
 import { encodeQr } from '../src/renderer/src/helpers/qr.ts'
 import { Cache, withOptimism } from '../src/renderer/src/state/cache.ts'
-import { httpApi, TOKEN_KEY, type KeptStrings } from '../src/renderer/src/transport.ts'
+import { httpApi, Offline, TOKEN_KEY, type KeptStrings } from '../src/renderer/src/transport.ts'
 import type { Item, ItemInfoDetail, Overview, WorkflowsAPI } from '../src/shared/types.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'workflows-phone-'))
@@ -272,73 +272,117 @@ if (qrencode) {
   }
 } else console.log('phone: the QR check skipped (no qrencode)')
 
-// ---- 7. The cache: drawn at once, the backend in the background, a change shown before it is answered ----
+// ---- 7. The cache: drawn at once, the backend behind; changes in an outbox, kept until they land ----
 {
   const item = (id: string, over: Partial<Item> = {}): Item => ({
     id, type: 'topic', title: id, parentId: null, open: true, closed: false, owner: 'human', blockers: [], assignees: ['human'],
     withYou: true, bot: null, since: 0, createdAt: 0, closedAt: null, ...over,
   })
   let server: Overview = { me: { id: 'human', name: 'human' }, items: [item('a'), item('b')], bots: [], users: [], recentAssignees: [], scripts: [] }
-  const detailOf = (id: string): ItemInfoDetail => ({
-    info: { id, closed: server.items.find((i) => i.id === id)!.closed, params: { text: id }, summary: id } as unknown as ItemInfoDetail['info'],
-    parent: null, pins: [], pinnedIn: [], typeScripts: [],
-    item: { item: server.items.find((i) => i.id === id)!, parent: null, children: [] },
-  })
-  let release: (() => void) | null = null
-  let fail = false
+  const detailOf = (id: string): ItemInfoDetail | null => {
+    const it = server.items.find((i) => i.id === id)
+    if (!it) return null
+    return {
+      info: { id, closed: it.closed, params: { text: id }, summary: id } as unknown as ItemInfoDetail['info'],
+      parent: null, pins: [], pinnedIn: [], typeScripts: [],
+      item: { item: it, parent: null, children: [] },
+    }
+  }
+  let gate: Promise<void> | null = null
+  let mode: 'ok' | 'refuse' | 'offline' = 'ok'
   const calls: string[] = []
+  const sent: unknown[][] = []
   const fake = {
     overview: async () => (calls.push('overview'), structuredClone(server)),
     itemInfoDetail: async (id: string) => (calls.push(`detail ${id}`), detailOf(id)),
     setUser: () => {},
     close: async (id: string) => {
-      // Held until released, as a slow network would.
-      await new Promise<void>((r) => (release = r))
-      if (fail) throw new Error('refused')
+      await gate
+      if (mode === 'offline') throw new Offline('no network')
+      if (mode === 'refuse') throw new Error('refused')
+      sent.push(['close', id])
       server = { ...server, items: server.items.map((i) => (i.id === id ? { ...i, closed: true, assignees: [], withYou: false } : i)) }
+    },
+    create: async (title: string, parentId: string | null, id: string) => {
+      sent.push(['create', title, parentId, id])
+      if (!server.items.some((i) => i.id === id)) server = { ...server, items: [...server.items, item(id, { title, withYou: false, assignees: [] })] }
+      return id
     },
   } as unknown as WorkflowsAPI
   const kept = new Map<string, string>()
   const storage = { getItem: (k: string) => kept.get(k) ?? null, setItem: (k: string, v: string) => void kept.set(k, v), removeItem: (k: string) => void kept.delete(k) } as Storage
+  const settle = (ms = 20) => new Promise((r) => setTimeout(r, ms))
   const cache = new Cache(() => fake, storage)
   const api = withOptimism(fake, cache)
+  const errors: string[] = []
+  cache.onError((m) => errors.push(m))
   api.setUser('human')
   assert.equal(cache.get().overview, null, 'nothing kept yet')
   cache.show('a')
   await cache.refresh()
   assert.equal(cache.get().overview?.items.length, 2)
   assert.ok(cache.get().details.a, 'the item on screen fetched with it')
-  // Fetched ahead: the others waiting on the person.
-  await new Promise((r) => setTimeout(r, 10))
+  await settle()
   assert.ok(cache.get().details.b, 'and those waiting on the person, ahead')
-  // Opening one already here asks nothing before it is drawn.
   calls.length = 0
   cache.show('b')
   assert.deepEqual(calls, [], 'opened from what is here')
-  // A close: drawn at once, before the backend answers.
-  const closing = api.close('b')
+  // A close: answered and drawn at once, while the backend is slow.
+  let open!: () => void
+  gate = new Promise((r) => (open = r))
+  await api.close('b')
   assert.equal(cache.get().details.b?.item?.item.closed, true, 'closed at once')
   assert.equal(cache.get().overview?.items.find((i) => i.id === 'b')?.withYou, false, 'and off the list at once')
-  release!()
-  await closing
-  await new Promise((r) => setTimeout(r, 10))
+  assert.equal(cache.get().unsent, 1, 'not sent yet')
+  open()
+  gate = null
+  await settle()
+  assert.deepEqual(sent.at(-1), ['close', 'b'])
   assert.equal(cache.get().details.b?.item?.item.closed, true, 'and still, once the backend has it')
-  // One that fails is taken back.
-  fail = true
-  const failing = api.close('a')
+  assert.equal(cache.get().unsent, 0)
+  // One the backend refuses is taken back, and says why.
+  mode = 'refuse'
+  await api.close('a')
   assert.equal(cache.get().details.a?.item?.item.closed, true)
-  release!()
-  await assert.rejects(failing, /refused/)
+  await settle()
   assert.equal(cache.get().details.a?.item?.item.closed, false, 'a refused change is taken back')
-  // Kept: another start opens onto it.
-  await new Promise((r) => setTimeout(r, 1100))
-  const again = new Cache(() => fake, storage)
-  again.setUser('human')
-  assert.equal(again.get().overview?.items.length, 2, 'opens onto what was kept')
-  assert.ok(again.get().details.a, 'with the details shown')
+  assert.deepEqual(errors, ['refused'])
+  // Offline: kept, drawn, and kept across a reload, then sent once the backend is back.
+  mode = 'offline'
+  await api.close('a')
+  const made = await api.create('New one', null)
+  assert.match(made, /^[0-9a-f-]{36}$/, 'a new topic has its id at once')
+  assert.ok(cache.get().details[made], 'and its view, so it opens at once')
+  await settle()
+  assert.equal(cache.get().offline, true)
+  assert.equal(cache.get().unsent, 2)
+  assert.equal(cache.get().details.a?.item?.item.closed, true, 'still drawn while offline')
+  await settle(600)
+  const reloaded = new Cache(() => fake, storage)
+  withOptimism(fake, reloaded)
+  mode = 'ok'
+  reloaded.setUser('human')
+  assert.equal(reloaded.get().overview?.items.length, 3, 'opens onto what was kept, the new topic with it')
+  await settle(50)
+  assert.deepEqual(sent.slice(-2), [['close', 'a'], ['create', 'New one', null, made]], 'sent in order once back')
+  assert.equal(reloaded.get().unsent, 0)
   const other = new Cache(() => fake, storage)
   other.setUser('someone')
-  assert.equal(other.get().overview, null, "but not someone else's")
+  assert.equal(other.get().overview, null, "and not someone else's")
+}
+
+// ---- 8. Ids chosen by the app: sent twice, added once ----
+{
+  const id = '0b5c1e57-3f0e-4a4b-9d0e-6b8f2c1a9e10'
+  assert.equal((await rpc(deskUrl, 'create', ['Made on the phone', null, id], bearer('desk-token')).then((r) => r.json()) as { result: string }).result, id)
+  await rpc(deskUrl, 'create', ['Made on the phone', null, id], bearer('desk-token'))
+  assert.equal(engine.store.ofType('topic').filter((r) => r.params.text === 'Made on the phone').length, 1, 'made once')
+  const comment = '7d3f0c2a-5b6e-4c1d-8a9f-0e1d2c3b4a59'
+  await rpc(deskUrl, 'send', [id, 'note', 'Said once', comment], bearer('desk-token'))
+  await rpc(deskUrl, 'send', [id, 'note', 'Said once', comment], bearer('desk-token'))
+  assert.equal(engine.store.children(id, 'comments').filter((r) => r.id === comment).length, 1, 'said once')
+  const bad = (await (await rpc(deskUrl, 'create', ['x', null, 'not-an-id'], bearer('desk-token'))).json()) as { error?: string }
+  assert.match(bad.error ?? '', /Not an id/)
 }
 
 phone.close()

@@ -3,7 +3,7 @@ import { useAtomValue } from 'jotai'
 import { Bot, Check, Plus, Search, User } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Item } from '../../shared/types'
-import { minutes } from './Chat'
+import { Elapsed } from './time'
 import { useItemMenu } from './ItemMenu'
 import { ItemPicker } from './ItemPicker'
 import { ItemIcon, waitingOn } from './icons'
@@ -177,7 +177,6 @@ export function ItemsList(props: {
   useEffect(() => {
     list.current?.querySelector('.row.selected')?.scrollIntoView({ block: 'nearest' })
   }, [current, text])
-  const now = Date.now()
 
   return (
     <div className={`items-view ${mobile ? 'mobile' : ''}`} ref={list}>
@@ -281,7 +280,7 @@ export function ItemsList(props: {
                 {line.chosen ? <Check className="icon" /> : <ItemIcon item={i} />}
                 <span className="row-title"><Marked text={i.title} phrase={text} /></span>
                 <span className="muted row-status">{detail(i)}</span>
-                <span className="muted row-age">{minutes(Math.max(0, now - i.since))}</span>
+                <span className="muted row-age"><Elapsed from={i.since} /></span>
               </div>
             )
           })}

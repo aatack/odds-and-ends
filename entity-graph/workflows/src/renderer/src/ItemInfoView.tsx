@@ -1,5 +1,6 @@
 import type { Catalog, ItemInfoDetail, ItemInfo } from '../../shared/types'
 import { minutes, time } from './Chat'
+import { Elapsed } from './time'
 import { TYPE_NAME } from './icons'
 import { SlackMessages } from './SlackView'
 import { fenced, Markdown } from './components/ui/Markdown'
@@ -34,7 +35,7 @@ export function ItemInfoView({
       </div>
 
       <section className="card">
-        <p>{status(e)}</p>
+        <p><Status e={e} /></p>
         {e.message && !e.cancelled && <Markdown className="item-message" text={e.message} />}
         {e.lastError && <p className="error-text">{e.lastError}</p>}
       </section>
@@ -69,11 +70,11 @@ export function ItemInfoView({
 }
 
 /** Open or how it ended, by whom, and for how long: `Open · 4m 02s` or `Cancelled · human · 12s`. */
-function status(e: ItemInfo): string {
-  if (!e.resolved) return `Open · ${e.createdBy} · ${minutes(Date.now() - e.createdAt)}`
+function Status({ e }: { e: ItemInfo }) {
+  if (!e.resolved) return <>Open · {e.createdBy} · <Elapsed from={e.createdAt} /></>
   // When and by whom are known for what resolved since the app started; egdb's history of `resolved` has the rest.
   const how = e.cancelled ? 'Cancelled' : 'Resolved'
-  return e.resolvedAt === null ? how : `${how} · ${e.resolvedBy} · ${minutes(Math.max(0, e.resolvedAt - e.createdAt))}`
+  return <>{e.resolvedAt === null ? how : `${how} · ${e.resolvedBy} · ${minutes(Math.max(0, e.resolvedAt - e.createdAt))}`}</>
 }
 
 /** What only some types have to show. */

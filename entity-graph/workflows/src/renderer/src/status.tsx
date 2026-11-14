@@ -42,7 +42,8 @@ export function statusOf(id: string, o: Overview, now: number): Status | null {
 /** The tiny dot after a pill's name, while there is something to say (hover for what). */
 export function StatusDot({ id }: { id: string }) {
   const o = useContext(OverviewContext)
-  const s = o && statusOf(id, o, Date.now())
+  const now = useNow()
+  const s = o && statusOf(id, o, now)
   return s ? <span className={`status-dot ${s.tone}`} title={s.text} /> : null
 }
 

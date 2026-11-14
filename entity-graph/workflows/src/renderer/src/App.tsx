@@ -398,6 +398,8 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
       <div className="view">
         <ViewHeader canGoBack onBack={w.back} title={title} mobile={mobile} />
         {w.error && <div className="error">{w.error}</div>}
+      <Unsent />
+        <Unsent />
         <div className="view-body">{body}</div>
       </div>,
     )
@@ -450,6 +452,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         onRename={e.type === 'topic' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
       />
       {w.error && <div className="error">{w.error}</div>}
+      <Unsent />
       {home && w.empty && <p className="muted view-note">Nothing needs you.</p>}
       <div className={`view-body ${!debug && (shown === 'comments' || shown === 'notes' || (shown === 'focus' && (e.type === 'file' || e.type === 'bot' || e.type === 'link' || e.type === 'github_pr'))) ? 'fill' : ''}`}>
         {debug ? (
@@ -790,6 +793,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
       <div className="chat-scroll" ref={scroller}>
         {short && <h2 className="chat-title">{item.title}</h2>}
         <Chat detail={detail} overview={w.overview} catalog={catalog} act={act} onOpen={onOpen} mobile={mobile} />
+        {w.loading && !detail.children.length && <div className="chat-note muted">Loading…</div>}
       </div>
       <Assignees item={item} overview={w.overview} onOpen={onOpen} />
       <div className="composer">
@@ -865,5 +869,16 @@ function viewMenu(shown: Display | 'debug', pick: (d: Display) => void, onDebug:
         </DropdownItem>
       )}
     </>
+  )
+}
+
+/** Changes made here that can't reach the backend yet: kept, and sent as soon as it is back (state/cache.ts). */
+function Unsent() {
+  const w = useItems()
+  if (!w.offline || !w.unsent) return null
+  return (
+    <div className="view-note muted">
+      Offline: {w.unsent} change{w.unsent === 1 ? '' : 's'} made here, sent when the connection is back.
+    </div>
   )
 }

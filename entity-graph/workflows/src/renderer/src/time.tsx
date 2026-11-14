@@ -23,12 +23,34 @@ export const minutes = (ms: number) => {
   return `${Math.floor(s / 3600)}h ${pad(Math.floor(s / 60) % 60)}m`
 }
 
-/** The time, by the second: for what counts down (only those cards, so the rest of the chat isn't drawn again each second). */
+// One clock for everything that counts, ticking here (never asking the backend): each count is worked out from the
+// time it counts from, which the backend gave once.
+const ticking = new Set<(now: number) => void>()
+let clock: ReturnType<typeof setInterval> | null = null
+function tick(fn: (now: number) => void): () => void {
+  ticking.add(fn)
+  clock ??= setInterval(() => {
+    const now = Date.now()
+    for (const f of ticking) f(now)
+  }, 1_000)
+  return () => {
+    ticking.delete(fn)
+    if (!ticking.size && clock) {
+      clearInterval(clock)
+      clock = null
+    }
+  }
+}
+
+/** The time, by the second: for what counts (only those parts, so the rest isn't drawn again each second). */
 export function useNow() {
   const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1_000)
-    return () => clearInterval(t)
-  }, [])
+  useEffect(() => tick(setNow), [])
   return now
+}
+
+/** How long since `from`, counting up by the second: `45s`, `3m 07s`. */
+export function Elapsed({ from }: { from: number }) {
+  const now = useNow()
+  return <>{minutes(Math.max(0, now - from))}</>
 }

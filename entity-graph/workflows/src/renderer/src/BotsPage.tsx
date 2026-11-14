@@ -1,7 +1,8 @@
 import { Bot } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { Agent } from '../../shared/types'
 import { minutes } from './Chat'
+import { useNow } from './time'
 import { Form } from './forms'
 import { api } from './useWorkflows'
 
@@ -59,11 +60,7 @@ export function botStatus(b: Agent, now = Date.now()): string {
 export function BotsPage({ bots, act, onOpen, mobile = false }: { bots: Agent[]; act: Act; onOpen: (id: string) => void; mobile?: boolean }) {
   const [draft, setDraft] = useState<BotDraft>(NEW_BOT)
   // When each wakes counts down by the second.
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [])
+  const now = useNow()
   const add = () =>
     act(async () => {
       const id = await api().saveBot(draft)

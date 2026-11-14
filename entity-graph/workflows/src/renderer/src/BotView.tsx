@@ -1,7 +1,8 @@
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { Agent } from '../../shared/types'
 import { minutes, time } from './Chat'
+import { useNow } from './time'
 import { BOT_FORM, botStatus, type BotDraft } from './BotsPage'
 import { Form } from './forms'
 import { api } from './useWorkflows'
@@ -41,11 +42,7 @@ export function BotView({ bot, act, mobile = false }: { bot: Agent | null; act: 
   const [draft, setDraft] = useState<BotDraft | null>(bot && draftOf(bot))
   const [open, setOpen] = useState(false)
   // The countdown to its next wake moves on by the second.
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [])
+  const now = useNow()
   if (!bot || !draft) return <p className="muted">This bot was deleted.</p>
   const changed = JSON.stringify(draft) !== JSON.stringify(draftOf(bot))
   return (

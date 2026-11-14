@@ -7,6 +7,12 @@ import { API_METHODS, type WorkflowsAPI } from '../../shared/types'
 /** Where the token is kept (local storage, in the browser). */
 export const TOKEN_KEY = 'workflows.phoneToken'
 
+/** The backend could not be reached (rather than refusing): what was asked may be asked again. */
+export class Offline extends Error {
+  readonly offline = true
+}
+export const isOffline = (e: unknown): boolean => !!(e as { offline?: boolean } | null)?.offline
+
 export interface KeptStrings {
   getItem: (key: string) => string | null
   setItem: (key: string, value: string) => void
@@ -39,9 +45,20 @@ export function httpApi(o: HttpOptions): WorkflowsAPI {
   }
 
   const call = async (method: string, args: unknown[]): Promise<unknown> => {
-    const res = await go(`${base}/rpc/${method}`, { method: 'POST', headers: headers(), body: JSON.stringify(args) })
-    const out = (await res.json().catch(() => ({ error: `The backend answered ${res.status}.` }))) as { result?: unknown; error?: string }
-    if (res.status === 401) refused()
+    let res: Response
+    try {
+      res = await go(`${base}/rpc/${method}`, { method: 'POST', headers: headers(), body: JSON.stringify(args) })
+    } catch (e) {
+      throw new Offline((e as Error).message)
+    }
+    const out = (await res.json().catch(() => null)) as { result?: unknown; error?: string } | null
+    // Not the backend answering (a proxy with nothing behind it, or a network in the way): it may be tried again.
+    if (!out) throw res.status >= 500 ? new Offline(`The backend answered ${res.status}.`) : new Error(`The backend answered ${res.status}.`)
+    // Refused for its token: kept to be asked again once signed in afresh.
+    if (res.status === 401) {
+      refused()
+      throw new Offline(out.error ?? 'The token was refused.')
+    }
     if (out.error) throw new Error(out.error)
     return out.result
   }

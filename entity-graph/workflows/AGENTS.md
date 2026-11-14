@@ -77,15 +77,22 @@ window: there `window.workflows` is the preload's, as always.
   `closeSource` forgets the token; `setToken`/`token` exist only here. A refused token sends the phone back to
   signing in.
 - **What is shown is cached** (`state/cache.ts`, in the app's window too): the overview and each item's detail, as
-  the backend last said them. A view draws what is there at once (an item not fetched yet says Loading…), and the
-  backend is asked in the background: both at once after a change (one refresh at a time, and once more if changes
-  came meanwhile), an item alone when it is opened and is not there or may have changed. `/events` is listened to
-  once, not again per item. `api()` is `withOptimism`: sending in a chat, closing, reopening, assigning, renaming
-  and picking a view are drawn at once and stay until the refresh after the backend answers lands (taken back if it
-  fails); the composer clears at once and gets the text back if sending fails. In a browser it is also kept in local
-  storage (the overview and the latest details, per person), the person's waiting items are fetched ahead, and a
-  phone signed in before opens straight onto what was kept while it signs in behind (refused: back to signing in).
-  The phone's listener gzips what it answers when asked.
+  the backend last said them. A view draws what is there at once (an item not fetched yet, from what the overview
+  says of it: `ItemInfoDetail.loading`, its chat saying Loading…), and the backend is asked in the background: both
+  at once after a change (one refresh at a time, once more if changes came meanwhile), an item alone when it is
+  opened and is not there or may have changed. `/events` is listened to once, not again per item.
+- **Changes go in an outbox.** `api()` is `withOptimism`: `send`, `create`, `close`, `reopen`, `assign`,
+  `setOwner`, `rename`, `setValue`, `pin` are drawn at once (a patch over the cache), answer at once (`create` with
+  its id), and are sent behind, in order. Refused by the backend: taken off, and the error shown (`cache.onError`).
+  Not reaching it (`Offline` from the transport: no network, a 5xx that is not the backend's, a refused token): kept
+  drawn, sent again (1, 2, 5, then 10 s, or at once when the backend is heard from), and the view says how many wait.
+  What they add has an id chosen here (`ItemSpec.id`, `create`'s and `send`'s last argument: a UUID, a person's
+  only), so sending one twice adds it once. Calls not in the outbox go straight to the backend, as before.
+- **On the phone** the cache, the outbox and the catalog are kept in local storage (per person), the open items in
+  the person's lists are fetched ahead (theirs first, 40), and a phone signed in before opens straight onto what was
+  kept while it signs in behind (refused: back to signing in). The phone's listener gzips what it answers when asked.
+- **Timers tick here.** Every count (an item's age, a bot's run, when something wakes) is worked out from the time it
+  counts from, on one clock in the window (`useNow`, `Elapsed` in `time.tsx`), never by asking the backend.
 - **Signing in on the phone** is `Start` with a token instead of a source. The Phone page's QR code (and its link)
   is the phone address with `#token=…` after it, which the browser never sends: opened, it fills the token in and
   signs in. `helpers/qr.ts` draws it (no dependency; checked against `qrencode` in the tests, where there is one).

@@ -22,6 +22,8 @@ export const cache = new Cache(rawApi, inBrowser ? localStorage : null)
  */
 export const api = (): WorkflowsAPI => (wrapped ??= withOptimism(rawApi(), cache))
 
+const CATALOG_KEY = 'workflows.catalog'
+
 /** Everything the app shows, kept in step with the main process. */
 export function useWorkflows() {
   const shown = useSyncExternalStore(cache.subscribe, cache.get)
@@ -31,15 +33,33 @@ export function useWorkflows() {
   const view = views[views.length - 1] ?? null
   // Home (the items view, or nothing on the stack) is the person signed in: their item, as any other is shown.
   const selected = view && 'id' in view ? view.id : overview.me.id || null
-  // What is here for it at once: undefined while it is being fetched the first time.
+  // What is here for it at once; fetched the first time, it is drawn from what the overview says of it meanwhile.
   const known = selected ? shown.details[selected] : null
-  const detail = known ?? null
+  const detail = known === undefined && selected ? cache.placeholder(selected) : (known ?? null)
   const loading = known === undefined
   const [error, setError] = useState<string | null>(null)
   const [empty, setEmpty] = useState(false)
-  const [catalog, setCatalog] = useState<Catalog | null>(null)
-  useEffect(() => void api().catalog().then(setCatalog), [])
+  // The catalog (types and presets) hardly changes: on the phone the kept one is drawn with at once.
+  const [catalog, setCatalog] = useState<Catalog | null>(() => {
+    try {
+      return inBrowser ? (JSON.parse(localStorage.getItem(CATALOG_KEY) ?? 'null') as Catalog | null) : null
+    } catch {
+      return null
+    }
+  })
+  useEffect(
+    () =>
+      void api()
+        .catalog()
+        .then((c) => {
+          setCatalog(c)
+          if (inBrowser) localStorage.setItem(CATALOG_KEY, JSON.stringify(c))
+        }, () => {}),
+    [],
+  )
 
+  // A change made here that the backend refused: it is taken off the screen, and this says why.
+  useEffect(() => cache.onError(setError), [])
   // Listened to once: each change refreshes what is here (the item on screen with it).
   useEffect(() => {
     void cache.refresh()
@@ -188,5 +208,5 @@ export function useWorkflows() {
     if (shownId) markViewed(shownId)
   }, [shownId, markViewed])
 
-  return { recent, markViewed, overview, view, views, detail, loading, catalog, selected, select, open, back, forward, next, act, actOn, error, empty }
+  return { recent, markViewed, overview, view, views, detail, loading, unsent: shown.unsent, offline: shown.offline, catalog, selected, select, open, back, forward, next, act, actOn, error, empty }
 }
