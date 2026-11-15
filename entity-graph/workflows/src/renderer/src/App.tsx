@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Catalog, Item, ItemDetail, ItemInfo, ItemInfoDetail, Overview } from '../../shared/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { atomWithStorage } from 'jotai/utils'
 import { ChevronDown, ChevronLeft, ChevronUp, History, House, Inbox, Menu, MoreHorizontal, Plug, Server, Shapes, SkipForward, Smartphone, type LucideIcon } from 'lucide-react'
 import { itemActions, type ItemAction } from './itemActions'
 import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
@@ -15,7 +16,7 @@ import { ItemInfoView } from './ItemInfoView'
 import { ItemPicker } from './ItemPicker'
 import { ItemsList } from './ItemsList'
 import { Composer } from './Composer'
-import { ItemRefContext, Markdown } from './components/ui/Markdown'
+import { GoContext, ItemRefContext, Markdown } from './components/ui/Markdown'
 import { ItemRef } from './ItemRef'
 import { Pill } from './sizes'
 import { DISPLAYS, displayOf, type Display } from '../../shared/views'
@@ -28,7 +29,7 @@ import { defaultActions } from './defaultActions'
 import { minutes, useNow } from './time'
 import { LogPage } from './LogPage'
 import { OverviewContext, StatusLine } from './status'
-import { PARADIGM } from '../../shared/paradigm'
+import { guide, type Reader } from '../../shared/paradigm'
 import { ScriptCard } from './ScriptCard'
 import { LinkFocus } from './LinkFocus'
 import { SlackChannels } from './SlackChannels'
@@ -410,8 +411,8 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
   if (w.view?.kind === 'integrations') return page('Integrations', <IntegrationsPage mobile={mobile} />)
   if (w.view?.kind === 'mcp') return page('MCP', <McpPage mobile={mobile} />)
   if (w.view?.kind === 'phone') return page('Phone', <PhonePage mobile={mobile} />)
-  // Home: how the app works, the same text the bots are given (shared/paradigm.ts), as markdown.
-  if (w.view?.kind === 'home') return page('Home', <Markdown className="home-doc" text={PARADIGM} />)
+  // Home: how the app works (shared/paradigm.ts), as markdown: as a person reads it, or as the bots are told it.
+  if (w.view?.kind === 'home') return page('Home', <HomePage onGo={(place) => (place === 'next' ? void w.next() : w.open({ kind: place } as View))} />)
   // Home (nothing on the stack, or the items view) is the person signed in, shown as any item is: `selected` is them.
   const home = !w.view || w.view.kind === 'items'
   if (!d || !w.catalog)
@@ -882,3 +883,27 @@ function Unsent() {
     </div>
   )
 }
+
+/**
+ * How the app works, for a person (with buttons to the places it names, and the keys) or as the bots are told it
+ * (the tool calls instead). Which is kept, so Home opens on the one last read.
+ */
+function HomePage({ onGo }: { onGo: (place: string) => void }) {
+  const [reader, setReader] = useAtom(readerAtom)
+  const text = useMemo(() => guide(reader), [reader])
+  return (
+    <div className="home-doc">
+      <div className="home-readers" role="tablist">
+        {(['human', 'agent'] as Reader[]).map((r) => (
+          <button key={r} data-ui role="tab" aria-selected={r === reader} className={r === reader ? 'chosen' : ''} onClick={() => setReader(r)}>
+            {r === 'human' ? 'For people' : 'For bots'}
+          </button>
+        ))}
+      </div>
+      <GoContext.Provider value={reader === 'human' ? onGo : null}>
+        <Markdown text={text} />
+      </GoContext.Provider>
+    </div>
+  )
+}
+const readerAtom = atomWithStorage<Reader>('workflows.home.reader', 'human')

@@ -32,12 +32,22 @@ const fence: Components['pre'] = ({ children }) => {
 /** How a reference to an item, `[itemId]()`, is drawn: the app says, as the items are its. Without it, as a link. */
 export const ItemRefContext = createContext<((id: string, label?: string) => React.ReactNode) | null>(null)
 
+/** What a link to `#<place>` does (the Home page's buttons): the app says. Without it, a link as any other. */
+export const GoContext = createContext<((place: string) => void) | null>(null)
+
 const ITEM_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** Links open in the browser: the window's open handler sends http(s) there. One to nowhere whose text is an item's id refers to that item. */
 function Link({ href, children }: { href?: string; children?: React.ReactNode }) {
   const itemRef = useContext(ItemRefContext)
+  const go = useContext(GoContext)
   const text = plainText(children)
+  if (go && href?.startsWith('#'))
+    return (
+      <button data-ui className="go-button" onClick={() => go(href.slice(1))}>
+        {children}
+      </button>
+    )
   if (!href && itemRef && (ITEM_ID.test(text) || /^https?:\/\//.test(text))) return itemRef(text)
   // A URL is an item too (a note brings it in): drawn as its pill, with the link's own text if it has some.
   if (href && itemRef && /^https?:\/\//.test(href)) return itemRef(href, text === href ? undefined : text)

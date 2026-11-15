@@ -594,6 +594,13 @@ button[data-ui].script-card.whole:hover { background: var(--color-gray-200); fil
 
 /* Home: how this works, as a page to read. */
 .home-doc { max-width: 760px; line-height: 1.6; }
+/* Home: for people or for bots. */
+.home-readers { display: flex; gap: 4px; margin-bottom: 12px; }
+.home-readers button[data-ui] { padding: 4px 10px; border-radius: 6px; font-size: 13px; color: var(--color-gray-600); }
+.home-readers button[data-ui].chosen { background: var(--color-gray-100); color: var(--ink); }
+/* Its keys, as keys; its places, as buttons. */
+.home-doc .markdown code { border: 1px solid var(--color-gray-300); border-bottom-width: 2px; background: var(--color-gray-50); white-space: nowrap; }
+.markdown button[data-ui].go-button { display: inline; padding: 0.05em 0.5em; border-radius: 6px; background: var(--accent); color: var(--accent-ink); font-weight: 500; }
 /* The scripts a type owns, on the Types page: each a card that opens it. */
 .type-scripts { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .type-script { padding: 8px 10px; border-radius: 8px; background: var(--color-gray-100); font-size: 13px; }
