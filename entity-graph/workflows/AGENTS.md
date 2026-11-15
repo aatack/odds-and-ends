@@ -110,10 +110,10 @@ window: there `window.workflows` is the preload's, as always.
   down as a prop to each main view (the search page, the chat and its input, the bot's page, the settings pages, the
   header, the menu). Each lays itself out for a phone when it is true, through a `mobile` class and the `.mobile`
   rules at the end of `styles.css`: one column, targets of 40px and more, 16px inputs (no zoom on focus), the safe
-  areas kept clear, and the menu at the top right with Next in it (a phone has no Ctrl+D). Views also act
+  areas kept clear, and the menu at the top right. The header is the desktop's (Back, Forward, the title, Next),
+  with a button after Next that opens the right pane (people, actions, type scripts, pins) as a sheet over the view. Views also act
   differently where a phone needs it: nothing is focused for the person (it would raise the keyboard), the chat
-  input's icon is tapped to change what is sent and Enter is a new line, and the header's actions are all in its ⋯
-  menu. Without `mobile` nothing changes: a new view takes the prop and keeps the desktop as it was.
+  input's icon is tapped to change what is sent and Enter is a new line. Without `mobile` nothing changes: a new view takes the prop and keeps the desktop as it was.
 
 **Setting it up** (the person does this; agents never run `tailscale`'s writes: the app runs them only on the person's
 own press on the Phone page, which the phone itself may not call). The Phone page is these steps, numbered, each

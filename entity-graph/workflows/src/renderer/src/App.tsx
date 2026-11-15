@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Catalog, Item, ItemDetail, ItemInfo, ItemInfoDetail, Overview } from '../../shared/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { ChevronDown, ChevronLeft, ChevronUp, History, House, Inbox, Menu, MoreHorizontal, Plug, Server, Shapes, SkipForward, Smartphone, type LucideIcon } from 'lucide-react'
-import { itemActions, type ItemAction } from './itemActions'
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, History, House, Inbox, Menu, PanelRight, Plug, Server, Shapes, SkipForward, Smartphone, X, type LucideIcon } from 'lucide-react'
+import { itemActions } from './itemActions'
 import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
 import { IconButton } from './components/ui/IconButton'
@@ -294,7 +294,7 @@ function Choices<T extends string>({ label, options, value, set }: { label: stri
   )
 }
 
-/** On a phone, the button at the top right, clear of the chat input: the pages, who is signed in, on which source, and Next, which has no key there. */
+/** On a phone, the button at the top right, clear of the chat input: the pages, who is signed in, and on which source. */
 function AppMenu({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSignOut: () => void; onCloseSource: () => void }) {
   const w = useItems()
   const [open, setOpen] = useState(false)
@@ -318,16 +318,6 @@ function AppMenu({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSign
     <div className={`app-menu ${mobile ? 'mobile' : ''}`} onMouseDown={(e) => e.stopPropagation()}>
       {open && (
         <div className="menu app-menu-list">
-          {mobile && (
-            <button
-              onClick={() => {
-                setOpen(false)
-                void w.next()
-              }}
-            >
-              Next <span className="menu-status">what needs you</span>
-            </button>
-          )}
           <button onClick={() => go({ kind: 'home' })}>Home</button>
           <button onClick={() => go({ kind: 'items' })}>Assignments</button>
           <button onClick={() => go({ kind: 'bots' })}>
@@ -390,9 +380,9 @@ function AppMenu({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSign
 
 /**
  * The middle of the window, and the right pane beside it: the top view on the stack. Every view's first line is the
- * same (`ViewHeader`): Back, the item as its pill, and Next; pressed anywhere else, an item's offers its views. Below
- * is the view itself. The right pane has the item's people and actions, then its pins (on a phone, there is none: the
- * header has the people and actions, and the debug view the pins).
+ * same (`ViewHeader`): Back, Forward, the item as its pill, and Next; pressed anywhere else, an item's offers its views.
+ * Below is the view itself. The right pane has the item's people and actions, then its pins (on a phone, there is
+ * none: the header's panel button opens the same over the view).
  */
 function ItemsMain({ mobile }: { mobile: boolean }) {
   const w = useItems()
@@ -400,12 +390,25 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
   // What the items view opens takes its place, so Back goes to where you were before it.
   const openFromItems = (id: string) => w.open({ kind: 'event', id })
   const d = w.detail
+  // On a phone, the right pane, open over the view; anywhere new closes it.
+  const [panel, setPanel] = useState(false)
+  useEffect(() => setPanel(false), [w.views])
   const frame = (view: ReactNode, side?: ReactNode) => (
     <>
       <main className="main">
         <div className="content">{view}</div>
       </main>
       {!mobile && <aside className="side-pane">{side}</aside>}
+      {mobile && panel && side && (
+        <div className="side-sheet-backdrop" onClick={(ev) => ev.target === ev.currentTarget && setPanel(false)}>
+          <aside className="side-pane side-sheet">
+            <button data-ui className="back side-sheet-close" title="Close" aria-label="Close" onClick={() => setPanel(false)}>
+              <X className="icon" />
+            </button>
+            {side}
+          </aside>
+        </div>
+      )}
     </>
   )
   const page = (title: string, body: ReactNode) =>
@@ -457,14 +460,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
         onBack={w.back}
         title={`${debug ? 'Debug: ' : ''}${e.summary.split('\n')[0]}`}
         info={e}
-        actions={
-          mobile && !debug ? (
-            <>
-              {d.item && <AssigneePill item={d.item.item} overview={w.overview} act={act} />}
-              <HeaderActions actions={itemActions(e, { act })} mobile />
-            </>
-          ) : undefined
-        }
+        onPanel={mobile ? () => setPanel(!panel) : undefined}
         menu={viewMenu(debug ? 'debug' : shown, pick, () => w.open({ kind: 'debug', id: e.id }))}
         onRename={e.type === 'topic' && !debug ? (title) => void w.act(() => api().rename(e.id, title)) : undefined}
       />
@@ -473,7 +469,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
       {home && w.empty && <p className="muted view-note">Nothing needs you.</p>}
       <div className={`view-body ${!debug && (shown === 'comments' || shown === 'notes' || (shown === 'focus' && (e.type === 'file' || e.type === 'bot' || e.type === 'link' || e.type === 'github_pr'))) ? 'fill' : ''}`}>
         {debug ? (
-          <DebugView id={e.id}>{mobile && pins}</DebugView>
+          <DebugView id={e.id} />
         ) : shown === 'assignments' ? (
           // What is assigned to it, what it owns, what is pinned to it: a person's or a bot's home. Yours, from Home,
           // makes topics with Tab, and what it opens takes its place.
@@ -553,55 +549,9 @@ function ItemSide({ detail: d, act, pins }: { detail: ItemInfoDetail; act: Act; 
 }
 
 /**
- * An item's actions in its header: the important ones as icon buttons, the rest in a menu beside them. On a phone,
- * all of them in the menu, leaving the title the width.
- */
-function HeaderActions({ actions, mobile = false }: { actions: ItemAction[]; mobile?: boolean }) {
-  const rest = actions.filter((a) => mobile || !a.important)
-  return (
-    <>
-      {actions
-        .filter((a) => !mobile && a.important)
-        .map((a) => (
-          <IconButton key={a.id} title={a.title ?? a.label} className={a.tone} onClick={a.run}>
-            <a.icon className="size-[17px]" />
-          </IconButton>
-        ))}
-      {rest.length > 0 && (
-        <Dropdown
-          align="right"
-          menuClassName="popover"
-          trigger={({ toggle }) => (
-            <IconButton title="More" onClick={toggle}>
-              <MoreHorizontal className="size-[17px]" />
-            </IconButton>
-          )}
-        >
-          {(close) =>
-            rest.map((a) => (
-              <DropdownItem
-                key={a.id}
-                onClick={() => {
-                  close()
-                  a.run()
-                }}
-              >
-                <span className="flex items-center gap-2" title={a.title}>
-                  <a.icon className={`size-[14px] ${a.tone || 'text-gray-500'}`} />
-                  {a.label}
-                </span>
-              </DropdownItem>
-            ))
-          }
-        </Dropdown>
-      )}
-    </>
-  )
-}
-
-/**
- * Every view's first line: Back (to the items view, at the bottom of every stack; its place kept on the items view
- * itself), the item as its pill, and Next. Given a `menu`, pressing anywhere in it but a button opens that menu (an
+ * Every view's first line, on a desktop and a phone alike: Back (to the items view, at the bottom of every stack; its
+ * place kept on the items view itself) and Forward, the item as its pill, and Next on the right (on a phone, then the
+ * button that opens the right pane). Given a `menu`, pressing anywhere in it but a button opens that menu (an
  * item's views). Right-click the title for the item's menu.
  */
 function ViewHeader(props: {
@@ -609,8 +559,8 @@ function ViewHeader(props: {
   onBack: () => void
   title?: string
   info?: ItemInfo
-  /** On a phone, what the right pane has: drawn on the right of the line. */
-  actions?: ReactNode
+  /** On a phone, opens or closes the right pane over the view. */
+  onPanel?: () => void
   menu?: (close: () => void, rename?: () => void) => ReactNode
   /** Given, the title can be edited: Rename in its menu, then Enter (or leaving it) saves and Escape doesn't. */
   onRename?: (title: string) => void
@@ -641,10 +591,12 @@ function ViewHeader(props: {
         title="Back"
         aria-label="Back"
         disabled={!props.canGoBack}
-        style={{ visibility: props.canGoBack ? 'visible' : 'hidden' }}
         onClick={props.onBack}
       >
         <ChevronLeft className="icon" />
+      </button>
+      <button data-ui className="back" title="Forward" aria-label="Forward" disabled={!w.canForward} onClick={w.forward}>
+        <ChevronRight className="icon" />
       </button>
       {/* The item as its pill, in every view's header: its icon (a topic's status), then its title. */}
       {info && <ItemInfoIcon info={info} />}
@@ -684,13 +636,16 @@ function ViewHeader(props: {
           {toggle && <ChevronDown className="icon view-chevron" />}
         </h1>
       )}
-      {props.actions && <div className="buttons">{props.actions}</div>}
-      {/* On a phone, Next is in the menu: there is no Ctrl+D. */}
-      {!props.mobile && (
+      <div className="buttons">
         <IconButton title="Next (Ctrl+D): the next thing assigned to you that you haven't looked at in the last half hour" onClick={() => void w.next()}>
           <SkipForward className="size-[17px]" />
         </IconButton>
-      )}
+        {props.onPanel && (
+          <IconButton title="Its people, actions and pins" onClick={props.onPanel}>
+            <PanelRight className="size-[17px]" />
+          </IconButton>
+        )}
+      </div>
     </header>
   )
   const { menu } = props

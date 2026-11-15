@@ -280,6 +280,9 @@ button[data-ui].gather-chip { display: inline-flex; align-items: center; gap: 4p
 button[data-ui].back { display: flex; padding: 4px; background: none; color: var(--muted); }
 button[data-ui].back:hover { color: var(--ink); filter: none; }
 .back .icon { width: 18px; height: 18px; }
+/* Back and Forward are always there, dimmed with nowhere to go, so the title never moves. */
+button[data-ui].back:disabled { opacity: 0.3; cursor: default; }
+.view-header .buttons { display: flex; align-items: center; gap: 4px; }
 .view-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px var(--gutter) 24px; }
 .view-body.fill { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
 .view > .error { margin: 0 var(--gutter) 12px; }
@@ -492,6 +495,14 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .app.mobile button[data-ui].back { padding: 10px; }
 .app.mobile .view-header .buttons { gap: 2px; }
 .app.mobile .view-header .buttons button { min-width: 40px; min-height: 40px; }
+/* Back and Forward side by side, a 40px target each, the gap between them closed. */
+.app.mobile button[data-ui].back { padding: 10px 6px; }
+.app.mobile .view-header { gap: 4px; }
+/* The right pane, opened over the view from the header: a sheet from the right, the view dimmed beside it. */
+.side-sheet-backdrop { position: fixed; inset: 0; z-index: 30; background: rgb(0 0 0 / 0.3); display: flex; justify-content: flex-end; }
+.app.mobile .side-pane.side-sheet { width: min(340px, 88vw); height: 100%; background: var(--panel); border-left: 1px solid var(--line); padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) 16px; }
+.app.mobile .side-sheet .side-action { min-height: 40px; }
+.app.mobile button[data-ui].side-sheet-close { align-self: flex-end; margin: -6px -6px -14px 0; padding: 10px; }
 .app.mobile .view-body { padding: 4px 12px calc(16px + env(safe-area-inset-bottom)); }
 .app.mobile .view-body.fill { padding: 0; }
 .app.mobile .view > .error, .app.mobile .view-note { margin-left: 12px; margin-right: 12px; }

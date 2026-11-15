@@ -174,5 +174,5 @@ export function useWorkflows() {
     if (shownId) markViewed(shownId)
   }, [shownId, markViewed])
 
-  return { recent, markViewed, overview, view, views, detail, loading, unsent: shown.unsent, offline: shown.offline, catalog, selected, open, back, forward, next, act, actOn, error, empty }
+  return { recent, markViewed, overview, view, views, detail, loading, unsent: shown.unsent, offline: shown.offline, catalog, selected, open, back, forward, canForward: forwards.length > 0, next, act, actOn, error, empty }
 }
