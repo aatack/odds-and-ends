@@ -84,7 +84,8 @@ window: there `window.workflows` is the preload's, as always.
   bots and the other device write shows with no refetch. The notes tree (`notes/store.ts`) reads and writes through
   it (`useEntityView`, ops through `Egdb.write`); a note made by a write is bare (nobody owns it or has it). The
   screenshot script runs on an egdb-server of its own (a temp file) so these screens have data.
-- **Undo and redo** (Ctrl+Z, and Ctrl+Shift+Z or Ctrl+Y, outside a text box: `useUndoKeys` in `App.tsx`) are
+- **Undo and redo** (Ctrl+Z, and Ctrl+Shift+Z or Ctrl+Y, outside a text box: `useUndoKeys` in `App.tsx`; on a phone,
+  Undo and Redo buttons in the header, each shown only while there is something for it: `UndoButtons`) are
   egdb-client's: the window keeps its own stack of the changes it wrote through its egdb (the notes tree, so far; the
   outbox's calls are not on it), with what each replaced, so an undo shows at once and a redo is a write again. Behind,
   egdb takes the change's events off (only the person's own, from the last five minutes, and only their newest: a

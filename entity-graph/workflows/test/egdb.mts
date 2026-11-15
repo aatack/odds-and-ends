@@ -10,6 +10,8 @@ import { homedir, tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { EgdbClient, type Op } from 'egdb-client'
 import { newEgdb } from '../src/renderer/src/egdb.ts'
+import { httpApi, TOKEN_KEY } from '../src/renderer/src/transport.ts'
+import { PHONE_REFUSED } from '../src/backend/http.ts'
 import type { WorkflowsAPI } from '../src/shared/types.ts'
 import { egdbServerPath, loadStore, startEgdb, storeBranch } from '../src/engine/egdb.ts'
 import { Engine } from '../src/engine/engine.ts'
@@ -321,28 +323,28 @@ const file = join(dir, 'round-trip.egdb')
 
     // Undo and redo (Ctrl+Z, Ctrl+Shift+Z): shown at once, then egdb takes the change off and the engine reads it back.
     type Info = { id: string; parentId: string | null; title: string }
-    const info = async (x: string) => ((await call('items', [x])) as Info[])[0]
+    const item = async (x: string) => ((await call('items', [x])) as Info[])[0]
     const text = (x: string) => win.view().get(x)?.values?.text
     let undone = win.undo()
     assert.equal(win.view().get(note)?.values?.type, undefined, 'an undone note goes at once')
     assert.ok(await undone, 'and egdb takes it off')
-    assert.equal(await info(note), undefined, 'so the engine has it no more')
+    assert.equal(await item(note), undefined, 'so the engine has it no more')
     assert.ok(!win.view().get(raw)?.links['notes\u0000outbound']?.some((l) => l.destination === note))
     let redone = win.redo()!
     assert.equal(text(note), 'A note', 'a redo shows at once')
     await redone
-    assert.equal((await info(note))?.parentId, raw, 'and the engine has it back, where it was')
+    assert.equal((await item(note))?.parentId, raw, 'and the engine has it back, where it was')
     // An edit, and a move, each put back as it was.
     await win.write([{ set: { entity: note, key: 'text', value: 'Edited' } }])
-    assert.equal((await info(note))?.title, 'Edited')
+    assert.equal((await item(note))?.title, 'Edited')
     undone = win.undo()
     assert.equal(text(note), 'A note', 'an undone edit shows the text before it at once')
     await undone
-    assert.equal((await info(note))?.title, 'A note', 'and the engine has it')
+    assert.equal((await item(note))?.title, 'A note', 'and the engine has it')
     await win.write([{ link: { source: raw, destination: note, link_type: 'notes', sort: 'removed' } }, { link: { source: id, destination: note, link_type: 'notes', sort: 'timestamp' } }])
-    assert.equal((await info(note))?.parentId, id)
+    assert.equal((await item(note))?.parentId, id)
     await win.undo()
-    assert.equal((await info(note))?.parentId, raw, 'an undone move puts it back in the note it was in')
+    assert.equal((await item(note))?.parentId, raw, 'an undone move puts it back in the note it was in')
     // Only the person's newest change: one made since, another way, refuses it, and it shows again.
     await win.write([{ set: { entity: note, key: 'text', value: 'Mine' } }])
     await call('setValue', raw, 'text', 'Something else since')
@@ -350,8 +352,23 @@ const file = join(dir, 'round-trip.egdb')
     assert.equal(text(note), 'A note')
     await assert.rejects(undone, /newest batch/)
     assert.equal(text(note), 'Mine', 'a refused undo shows the change again')
-    assert.equal((await info(note))?.title, 'Mine')
+    assert.equal((await item(note))?.title, 'Mine')
     stop()
+    // The phone's way: the same egdb over its HTTP transport (its header's Undo and Redo buttons call these).
+    assert.ok(!PHONE_REFUSED.has('egdb'), "the phone's listener lets egdb's calls through")
+    const kept = new Map([[TOKEN_KEY, info.token]])
+    const http = httpApi({ base: info.url, storage: { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => void kept.set(k, v), removeItem: (k) => void kept.delete(k) }, onRefused: () => {}, retryMs: 50 })
+    http.setUser!('tester')
+    const phone = newEgdb(() => http, 'tester')
+    await phone.load([note], [['notes', 'inbound']])
+    await phone.write([{ set: { entity: note, key: 'text', value: 'From the phone' } }])
+    assert.equal((await item(note))?.title, 'From the phone')
+    undone = phone.undo()
+    assert.equal(phone.view().get(note)?.values?.text, 'Mine', 'undone on the phone at once')
+    await undone
+    assert.equal((await item(note))?.title, 'Mine', 'and in the engine')
+    await phone.redo()
+    assert.equal((await item(note))?.title, 'From the phone', 'and redone')
   }
   assert.match(String((await egdb('write', { ops: [{ set: { entity: 'wf.x', key: 'value', value: 1 } }] })).error), /not an item/)
   // A second backend on the same data refuses to start.

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Catalog, Item, ItemDetail, ItemInfo, ItemInfoDetail, Overview } from '../../shared/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, History, House, Inbox, Menu, PanelRight, Plug, Server, Shapes, SkipForward, Smartphone, X, type LucideIcon } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, History, House, Inbox, Menu, PanelRight, Plug, Redo2, Server, Shapes, SkipForward, Smartphone, Undo2, X, type LucideIcon } from 'lucide-react'
 import { itemActions } from './itemActions'
 import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
@@ -26,7 +26,7 @@ import { DISPLAYS, displayOf, type Display } from '../../shared/views'
 import { FileFocus, uploadFiles } from './FileView'
 import { pasteHere, usePaste } from './paste'
 import { NotesView } from './notes/NotesView'
-import { EgdbProvider, useEgdb } from 'egdb-client/react'
+import { EgdbProvider, useEgdb, useUndo } from 'egdb-client/react'
 import { newEgdb } from './egdb'
 import { ItemInfoIcon, TYPE_NAME } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
@@ -669,6 +669,7 @@ function ViewHeader(props: {
         </h1>
       )}
       <div className="buttons">
+        {props.mobile && <UndoButtons />}
         <IconButton title="Next (Ctrl+D): the next thing assigned to you that you haven't looked at in the last half hour" onClick={() => void w.next()}>
           <SkipForward className="size-[17px]" />
         </IconButton>
@@ -686,6 +687,30 @@ function ViewHeader(props: {
     <Dropdown menuClassName="popover" trigger={({ toggle }) => header(toggle)}>
       {(close) => menu(close, onRename && (() => setEditing(title ?? '')))}
     </Dropdown>
+  )
+}
+
+/**
+ * On a phone, which has no Ctrl+Z: Undo and Redo in the header, each only while there is something for it (the
+ * window's egdb's stacks: `useUndoKeys`), doing what the keys do.
+ */
+function UndoButtons() {
+  const egdb = useEgdb()
+  const { act } = useItems()
+  const can = useUndo()
+  return (
+    <>
+      {can.undo > 0 && (
+        <IconButton title="Undo your last change" onClick={() => void act(async () => void (await egdb.undo()))}>
+          <Undo2 className="size-[17px]" />
+        </IconButton>
+      )}
+      {can.redo > 0 && (
+        <IconButton title="Redo" onClick={() => void act(async () => void (await egdb.redo()))}>
+          <Redo2 className="size-[17px]" />
+        </IconButton>
+      )}
+    </>
   )
 }
 
