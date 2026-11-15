@@ -164,6 +164,12 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
     setEdit(null)
   }
 
+  // Dropped open from a margin on a topic with no notes yet: the box for its first one is open at once.
+  useEffect(() => {
+    if (bare && !info.notes && !edit && info.type === 'topic') startCreate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   /** Whether the row picked goes into the one chosen (a move, or a link made with `shift+r`), or the other way. */
   const pickingInto = picking?.kind === 'move' || !!picking?.reverse
   /** Finishes a move or a link with what was chosen; refuses what would put a note inside itself. */
