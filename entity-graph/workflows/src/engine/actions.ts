@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { runScript } from './script'
 import type { ItemSpec } from '../shared/types'
 import type { Action } from './integrations'
-import { PARADIGM } from './paradigm'
+import { GUIDES, guide } from './paradigm'
 import { objectSchema } from './schema'
 import { TUNABLE } from './settings'
 import type { Engine } from './engine'
@@ -85,9 +85,10 @@ export const itemActions: Action[] = [
   {
     name: 'paradigm',
     unsafe: false,
-    description: 'How topics, items and blockers work, in a few lines: read it first.',
-    input: {},
-    run: async () => PARADIGM,
+    description:
+      'How the app works: read it first. `page` picks the guide: home (the default: topics, assignees, comments, notes, pins, views, bots and scripts), integrations (what the app reaches outside, and its tools) or types (the kinds of item).',
+    input: { page: z.enum(GUIDES as [string, ...string[]]).optional() },
+    run: async (a) => guide((a.page as (typeof GUIDES)[number] | undefined) ?? 'home', 'agent'),
   },
   {
     name: 'item_types',

@@ -598,6 +598,12 @@ button[data-ui].script-card.whole:hover { background: var(--color-gray-200); fil
 .home-readers { display: flex; gap: 4px; margin-bottom: 12px; }
 .home-readers button[data-ui] { padding: 4px 10px; border-radius: 6px; font-size: 13px; color: var(--color-gray-600); }
 .home-readers button[data-ui].chosen { background: var(--color-gray-100); color: var(--ink); }
+.home-readers button[data-ui].home-copy { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.home-copy .icon { width: 14px; height: 14px; }
+/* For bots: the markdown itself. */
+.home-source { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; background: var(--color-gray-50); border-radius: 8px; padding: 12px 14px; }
+/* Above a page's own cards (Integrations, Types). */
+.view-body > .home-doc + .page { margin-top: 24px; }
 /* Its keys, as keys; its places, as buttons. */
 .home-doc .markdown code { border: 1px solid var(--color-gray-300); border-bottom-width: 2px; background: var(--color-gray-50); white-space: nowrap; }
 .markdown button[data-ui].go-button { display: inline; padding: 0.05em 0.5em; border-radius: 6px; background: var(--accent); color: var(--accent-ink); font-weight: 500; }
