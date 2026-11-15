@@ -274,9 +274,9 @@ anywhere on the page scrolls the tree.
 
 **Margins** (`Margin.tsx`): on a desktop a chat and a tree keep to a column (`--col-l`, `--col-r`) with a margin to
 its right, outside it; there, level with each topic, an icon with how many notes it has (in a chat) or comments (in a
-tree) (`ItemInfo.comments`/`notes`, counted by `toInfo`). Pressing it opens that view in the margin beside the row,
-always 380px wide, as a comment thread opens beside a document, and the column moves over to make room for it
-(`.content.previewing`); on a phone it opens beneath the row (`previewAtom`, drawn by `Preview` in `App.tsx`). It is
+tree) (`ItemInfo.comments`/`notes`, counted by `toInfo`). Pressing it opens that view over the page, its top left at
+the right of the icon, always 380px wide, as a comment thread opens beside a document, moving nothing under it; on a
+phone it opens beneath the row (`previewAtom`, drawn by `Preview` in `App.tsx`). It is
 the same view as the main one: the chat with its input, or the tree with its keys, `bare` (no title, parent or find
 line), without margins of its own. It is a dialog while open (`openModal`; the views in it read `DialogContext` so `modalOpen(mine)` leaves them
 their keys, and the tree's wheel is left alone); Escape leaves a box being typed in, then shuts it; pressing outside it

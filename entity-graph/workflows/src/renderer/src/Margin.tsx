@@ -35,7 +35,7 @@ export function Margin({ info, other }: { info: ItemInfo; other: 'comments' | 'n
         }
         onClick={(e) => {
           const anchor = e.currentTarget.closest<HTMLElement>('.bubble-row, .note-row')
-          setPreview(showing || !anchor ? null : { id: info.id, as: other, anchor })
+          setPreview(showing || !anchor ? null : { id: info.id, as: other, anchor, button: e.currentTarget })
         }}
       >
         <Icon className="icon" />

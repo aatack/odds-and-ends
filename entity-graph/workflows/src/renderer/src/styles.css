@@ -315,15 +315,9 @@ button[data-ui].blocker-text { text-align: left; padding: 0; overflow: hidden; t
    so it scrolls from the edge all the same; a focus that wants the whole width (a file, a web page, a bot) fills it. */
 .content { --gutter: max(32px, calc((100% - 920px) / 2)); --col-l: var(--gutter); --col-r: var(--gutter); width: 100%; height: 100%; display: flex; flex-direction: column; }
 /* A chat and a tree keep to the column by `--col-l` and `--col-r`: on a desktop with a margin to the right of it, outside
-   it (`--margin`), for what `.margin-status` says of each row. While a row's thread is open beside it (`.previewing`), the
-   column moves over to make room for it (`--preview`, as `PREVIEW_WIDTH`), as a document does for its comments, keeping
-   at least 360px; a window too narrow for both has the thread over the column's edge. */
+   it (`--margin`), for what `.margin-status` says of each row. A row's thread opens over the page from there (App.tsx
+   `Preview`), moving nothing. */
 .app:not(.mobile) .content { --margin: 96px; --col-r: max(var(--gutter), calc(var(--margin) + 16px)); }
-.app:not(.mobile) .content.previewing {
-  --preview: 380px;
-  --col-l: max(32px, calc((100% - 920px - var(--preview) - 24px) / 2));
-  --col-r: min(max(calc(var(--preview) + 24px), calc((100% - 920px + var(--preview) + 24px) / 2)), calc(100% - var(--col-l) - 360px));
-}
 .side-nav { flex: none; width: 200px; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; padding: 12px 8px; border-right: 1px solid var(--line); }
 .side-nav-pages { display: flex; flex-direction: column; gap: 2px; }
 button[data-ui].side-nav-page { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; border-radius: 6px; background: none; color: var(--muted); font-size: 13px; text-align: left; }

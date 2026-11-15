@@ -395,12 +395,10 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
   // On a phone, the right pane, open over the view; anywhere new closes it.
   const [panel, setPanel] = useState(false)
   useEffect(() => setPanel(false), [w.views])
-  // While a margin's thread is open beside the column, the column makes room for it, as a document does for its comments.
-  const previewing = useAtomValue(previewAtom) !== null
   const frame = (view: ReactNode, side?: ReactNode) => (
     <>
       <main className="main">
-        <div className={`content ${previewing && !mobile ? 'previewing' : ''}`}>{view}</div>
+        <div className="content">{view}</div>
       </main>
       {!mobile && <aside className="side-pane">{side}</aside>}
       {mobile && panel && side && (
@@ -854,14 +852,14 @@ function Unsent() {
   )
 }
 
-/** As `--preview` in styles.css, which makes the room for it. */
+/** How wide a margin's thread is, on a desktop. */
 const PREVIEW_WIDTH = 380
 
 /**
  * An item's other view (`previewAtom`, from a chat's or a tree's margin), the same view as the main one shows, and
  * nothing more: its chat with its input (to reply, or hand it to a bot), or its tree with its keys. On a desktop it
- * opens in the margin to the right of the column, level with its row, always as wide (as a document's comment thread
- * does; the column makes room for it, `.content.previewing`); on a phone, beneath its row. While open it is a dialog:
+ * opens over the page, its top left at the right of the icon pressed, always as wide (as a document's comment thread
+ * does), moving nothing under it; on a phone, beneath its row. While open it is a dialog:
  * the keys and the wheel are its, Escape shuts it (or, while typing, leaves the box first), and pressing anywhere
  * outside it (its row too) shuts it. What is opened from in it opens in the main view.
  */
@@ -912,9 +910,9 @@ function Preview({ mobile }: { mobile: boolean }) {
     strategy: 'fixed',
     placement: mobile ? 'bottom-start' : 'right-start',
     middleware: [
-      offset(mobile ? 4 : 12),
-      flip({ padding: 8 }),
-      // Kept on the screen, over the column if the window is too narrow to have it beside it.
+      offset(mobile ? 4 : 6),
+      // On a desktop it stays to the right, over the right pane if need be: only slid back as far as keeps it on the screen.
+      ...(mobile ? [flip({ padding: 8 })] : []),
       shift({ padding: 8, crossAxis: true }),
       size({
         padding: 8,
@@ -928,7 +926,7 @@ function Preview({ mobile }: { mobile: boolean }) {
     ],
     whileElementsMounted: autoUpdate,
   })
-  useEffect(() => refs.setReference(p?.anchor ?? null), [p?.anchor, refs])
+  useEffect(() => refs.setReference((mobile ? p?.anchor : p?.button) ?? null), [p?.anchor, p?.button, mobile, refs])
   // The keys are its from the start: its input, for a chat; itself, for a tree.
   useEffect(() => {
     if (!d || !p) return

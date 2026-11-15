@@ -89,8 +89,8 @@ export const viewedAtAtom = atomWithStorage<Record<string, number>>('workflows.v
 export const VIEWED_LATELY_MS = 30 * 60 * 1000
 
 /**
- * An item's other view, opened from a chat's or a tree's margin beside its row (`anchor`; beneath it on a phone), as a
- * comment thread opens beside a document: it has the keys and the wheel while open; pressing outside it, or its icon
- * again, closes it.
+ * An item's other view, opened from a chat's or a tree's margin: over the page, its top left at the right of the icon
+ * pressed (`button`; beneath its row, `anchor`, on a phone), as a comment thread opens beside a document: it has the
+ * keys and the wheel while open; pressing outside it, or its icon again, closes it.
  */
-export const previewAtom = atom<{ id: string; as: 'comments' | 'notes'; anchor: HTMLElement } | null>(null)
+export const previewAtom = atom<{ id: string; as: 'comments' | 'notes'; anchor: HTMLElement; button: HTMLElement } | null>(null)
