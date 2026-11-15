@@ -258,7 +258,8 @@ Keys: `w`/`s` (or the arrows) move, `a` to the parent, Home/End; ←/→ fold; `
 anything else as itself) and `Shift+A` (or Alt+←) goes back; Enter adds a note in the row, `/` a section, `?` a
 checkbox, `e` edits (Enter, or pressing another row, writes; Escape doesn't; leaving the window or the view keeps the
 draft, per note, to finish); `Ctrl+/` toggles a section, `>` steps the checkbox (none, open, ticked); `x` then select
-where it goes and `x` again moves the row there, `r` then select what and `r` again puts it in the row (either across
+where it goes and `x` again moves the row there, `r` then select what and `r` again puts it in the row, `Shift+R` the other way, the row into what is selected (either
+`r` finishes a link; either across
 trees reached with `d`; the corner says what waits, and its Pick… opens the app's picker); Delete/Backspace takes the
 row out of its note (into none); `q` sections only, `Shift+Q` open ones only; Ctrl+F finds (Enter hands the keys back),
 Escape clears a find or the filters. Where each tree was left (the row, what is folded) is kept per note. The wheel

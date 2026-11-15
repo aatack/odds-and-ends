@@ -36,10 +36,11 @@ const editsAtom = atomWithStorage<Record<string, Edit>>('workflows.notes.edits',
 
 /**
  * A move waiting for where to (`x`: the row picked goes into the one chosen), or a link for what (`r`: the one chosen
- * goes into the row picked). Chosen by selecting a row, in this tree or another reached with `d`, and pressing the key
- * again; or in the picker, from the corner. Not kept: a reload forgets it.
+ * goes into the row picked; `shift+r` the other way, the row picked into the one chosen, as entity-graph's are). Chosen
+ * by selecting a row, in this tree or another reached with `d`, and pressing the key again (either `r` for a link: its
+ * way is settled); or in the picker, from the corner. Not kept: a reload forgets it.
  */
-type Picking = { kind: 'move' | 'link'; subject: string; label: string }
+type Picking = { kind: 'move' | 'link'; reverse?: boolean; subject: string; label: string }
 const pickingAtom = atom<Picking | null>(null)
 
 type Row = { key: string; id: string; path: string[]; depth: number; info: ItemInfo; hasKids: boolean; collapsed: boolean }
@@ -163,12 +164,14 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
     setEdit(null)
   }
 
+  /** Whether the row picked goes into the one chosen (a move, or a link made with `shift+r`), or the other way. */
+  const pickingInto = picking?.kind === 'move' || !!picking?.reverse
   /** Finishes a move or a link with what was chosen; refuses what would put a note inside itself. */
   const finish = (chosen: string) => {
     if (!picking) return
     setPicking(null)
     setChoosing(false)
-    const [what, into] = picking.kind === 'move' ? [picking.subject, chosen] : [chosen, picking.subject]
+    const [what, into] = pickingInto ? [picking.subject, chosen] : [chosen, picking.subject]
     if (within(tree, into, what)) return notesError("A note can't go inside itself.")
     moveNote(what, into)
     setCollapsed(resolve(into), false)
@@ -219,7 +222,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
     if (!selected) return
     const parentPath = selected.path.slice(0, -1)
     // Waiting for a pick: the same key again takes the row selected; Escape gives up. Everything else moves as ever.
-    if (picking && ((k === 'x' && picking.kind === 'move') || (k === 'r' && picking.kind === 'link'))) return run(() => finish(selected.id))
+    if (picking && ((k === 'x' && picking.kind === 'move') || ((k === 'r' || k === 'R') && picking.kind === 'link'))) return run(() => finish(selected.id))
     if (picking && k === 'Escape') return run(() => setPicking(null))
     if (k === 'w' || k === 'ArrowUp') run(() => at > 0 && select(rows[at - 1].path))
     else if (k === 's' || k === 'ArrowDown') run(() => at < rows.length - 1 && select(rows[at + 1].path))
@@ -238,7 +241,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
     else if (k === 'd') run(() => selected.id !== root && onOpen(selected.id))
     else if (k === 'A') run(onBack)
     else if (k === 'x') run(() => parentPath.length && setPicking({ kind: 'move', subject: selected.id, label: textOf(selected.info) }))
-    else if (k === 'r') run(() => selected.info.type === 'topic' && setPicking({ kind: 'link', subject: selected.id, label: textOf(selected.info) }))
+    else if (k === 'r' || k === 'R') run(() => selected.info.type === 'topic' && setPicking({ kind: 'link', reverse: k === 'R', subject: selected.id, label: textOf(selected.info) }))
     else if ((k === 'Delete' || k === 'Backspace') && parentPath.length)
       // Out of its note, into none; the row above is selected, as in entity-graph.
       run(() => {
@@ -392,9 +395,9 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
         <div className="note-picking" role="status">
           <div className="note-picking-head">
             <strong>
-              {picking.kind === 'move' ? 'Move' : 'Put in'} “{picking.label.split('\n')[0] || 'Empty'}”
+              {picking.kind === 'move' ? 'Move' : picking.reverse ? 'Put' : 'Put in'} “{picking.label.split('\n')[0] || 'Empty'}”{picking.reverse ? ' in…' : ''}
             </strong>
-            <button data-ui onClick={() => setChoosing(true)} title={picking.kind === 'move' ? 'Pick where it goes' : 'Pick what goes in it'}>
+            <button data-ui onClick={() => setChoosing(true)} title={pickingInto ? 'Pick where it goes' : 'Pick what goes in it'}>
               Pick…
             </button>
             <button data-ui title="Cancel (Escape)" aria-label="Cancel" onClick={() => setPicking(null)}>
@@ -402,16 +405,16 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
             </button>
           </div>
           <p>
-            {picking.kind === 'move' ? 'Select where it goes' : 'Select what goes in it'}, then press {picking.kind === 'move' ? 'x' : 'r'} again.
+            {pickingInto ? 'Select where it goes' : 'Select what goes in it'}, then press {picking.kind === 'move' ? 'x' : 'r'} again.
           </p>
         </div>
       )}
       {picking && choosing && (
         <ItemPicker
-          title={picking.kind === 'move' ? 'Move into…' : 'Put in it…'}
+          title={picking.kind === 'move' ? 'Move into…' : picking.reverse ? 'Put it in…' : 'Put in it…'}
           items={tasks}
           recent={recent}
-          verb={picking.kind === 'move' ? 'Move here' : 'Put in'}
+          verb={picking.kind === 'move' ? 'Move here' : picking.reverse ? 'Put it here' : 'Put in'}
           onClose={() => setChoosing(false)}
           onPick={finish}
         />

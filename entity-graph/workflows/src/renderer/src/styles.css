@@ -627,8 +627,9 @@ button[data-ui].script-card.whole:hover { background: var(--color-gray-200); fil
 .type-script:hover { background: var(--color-gray-200); }
 
 /* Notes keep to the column too, their scroller reaching the edge. */
-.view-body.fill > .notes > * { padding-left: var(--gutter); padding-right: var(--gutter); }
-.app.mobile .view-body.fill > .notes > * { padding-left: 12px; padding-right: 12px; }
+/* Not the move toast: it keeps its own padding, in the corner. */
+.view-body.fill > .notes > :not(.note-picking) { padding-left: var(--gutter); padding-right: var(--gutter); }
+.app.mobile .view-body.fill > .notes > :not(.note-picking) { padding-left: 12px; padding-right: 12px; }
 /* A link's focus: the page itself, the whole width, under a line with its address. */
 .link-focus { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .link-focus-bar { display: flex; align-items: center; gap: 8px; padding: 4px 16px 8px; font-size: 12px; color: var(--muted); }
