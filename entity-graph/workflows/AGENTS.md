@@ -281,8 +281,7 @@ is markdown that draws a link to `#<page>` as a button that goes there (`#next` 
 (`page`: home, integrations or types). Home's is `PARADIGM`, the MCP server's instructions. A change to the bots' text
 is a change to what bots are told. **Assignments** (Ctrl+L, the items view, or nothing on the stack) is the person signed in's own item, shown as any item is
 (`selected` in `useWorkflows` is them): its title is their name, it opens on their Assignments (the finder: see The
-finder, under UI), and its header, right pane and views are every item's. Only Home's finder makes topics with Tab and
-replaces itself with what it opens. A bot's or another person's home is their item. There are no configurable sections
+finder, under UI), and its header, right pane and views are every item's. Only Home's finder makes topics with Tab. A bot's or another person's home is their item. There are no configurable sections
 any more: an older build's `search` item (its `sections`) is left out on load, as `widget` and `process` are.
 
 ## Integrations
@@ -379,8 +378,9 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   input, topic titles). each in a light or a dark mode. `appearance.ts` keeps the choice and sets `data-theme`/`data-serif`/`data-mode` (and `.dark`) on `<html>`;
   `themes.css` holds the overrides. Code is Fira Code everywhere; weights lean light.
 - **The content pane is a stack of views** (`views.ts`, a Jotai atom kept in
-  local storage). The list and Next replace the stack; Open, Debug and links push
-  onto it; Back pops it. A view is `{ kind, id }`: `item` shows an item in the view its `display` says (see Views); `debug`
+  local storage), with a second for what Back took off (`forwardAtom`), each kept to 250 (`HISTORY_LIMIT`). Opening any
+  view (the list, Next, links, Open, Debug) pushes it and clears the second; Back moves the top onto the second;
+  Forward moves it back. Nothing else touches either. A view is `{ kind, id }`: `item` shows an item in the view its `display` says (see Views); `debug`
   (`DebugView`) shows the item as egdb holds it (`Engine.inspect`): its id, who made it and when (who set its
   `type`), its values (a comment's are just `type` and `text`), and its links, each with when and by whom. A new kind of view is a new `kind`.
 - **Three columns, the same for every view** (on a desktop; a phone has the middle alone, and its menu at the top
@@ -403,8 +403,8 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   search line); a view is never pushed onto an identical one; Ctrl+W and Alt+Left take the top view off, and Alt+Right puts the
   last one taken off back on (`forwardAtom`, cleared by going anywhere new); the main process catches them in
   `before-input-event`, so the window's menu doesn't close the window. Typing filters titles fuzzily; the arrows
-  move; Enter opens; Tab makes a new item with the typed title; Escape with nothing typed goes Back. What the items view opens *replaces* it on the stack
-  (`open(view, { replace: true })`), so Back goes to where you were before it rather than to the list.
+  move; Enter opens; Tab makes a new item with the typed title; Escape with nothing typed goes Back. What the items view opens is pushed as anything is, so Back
+  returns to the list.
 - **The finder** (`ItemsList`) is one view: home, an item's Assignments, and every item picker (`ItemPicker`, the
   same list in a modal, picking rather than opening: one item, or with `multiple` toggling each) show the same
   **sections** (`FINDER_SECTIONS` in `sections.ts`), for whoever it is for (`recent.who`, else you): **History** (what Back goes through: the views of items below the one

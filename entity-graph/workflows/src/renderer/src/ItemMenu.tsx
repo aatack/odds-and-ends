@@ -9,7 +9,7 @@ import type { Recent } from './sections'
 import { itemActions } from './itemActions'
 import { everyone, nameOf } from './people'
 import { api } from './useWorkflows'
-import { menuAtom, renameAtom, sameView, viewsAtom, type View } from './views'
+import { forwardAtom, HISTORY_LIMIT, menuAtom, renameAtom, sameView, viewsAtom, type View } from './views'
 
 /** What to spread on anything standing for an item, so a right-click on it opens the item menu. */
 export function useItemMenu() {
@@ -40,6 +40,7 @@ const SUGGESTED = 5
 export function ItemMenu({ actOn, overview, recent }: { overview: Overview; recent: Recent; actOn: (id: string) => Act }) {
   const [menu, setMenu] = useAtom(menuAtom)
   const [views, setViews] = useAtom(viewsAtom)
+  const setForwards = useSetAtom(forwardAtom)
   const setRename = useSetAtom(renameAtom)
   // The item itself, read as the menu opens: its actions, and the links it has.
   const [detail, setDetail] = useState<ItemInfoDetail | null>(null)
@@ -88,8 +89,10 @@ export function ItemMenu({ actOn, overview, recent }: { overview: Overview; rece
     setMenu(null)
     fn()
   }
+  // Opened as any view is (useWorkflows' open): on top of the stack, clearing what Back took off.
   const push = (view: View) => {
-    if (!sameView(views[views.length - 1], view)) setViews([...views, view])
+    if (!sameView(views[views.length - 1], view)) setViews([...views, view].slice(-HISTORY_LIMIT))
+    setForwards([])
   }
   // A view picked here is kept as its display, as the header's menu keeps it.
   const openAs = (display: Display) => {

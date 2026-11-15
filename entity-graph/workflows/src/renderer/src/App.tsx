@@ -385,7 +385,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
   const w = useItems()
   const openItem = (id: string) => w.open({ kind: 'event', id })
   // What the items view opens takes its place, so Back goes to where you were before it.
-  const openFromItems = (id: string) => w.open({ kind: 'event', id }, { replace: w.view?.kind === 'items' })
+  const openFromItems = (id: string) => w.open({ kind: 'event', id })
   const d = w.detail
   const frame = (view: ReactNode, side?: ReactNode) => (
     <>
@@ -433,7 +433,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
   // A view picked from the debug view takes its place.
   const pick = (display: Display) => {
     if (display !== shown) void w.act(() => api().setValue(e.id, 'display', display))
-    if (debug) w.open({ kind: 'event', id: e.id }, { replace: true })
+    if (debug) w.open({ kind: 'event', id: e.id })
   }
   const pins = <Pins id={e.id} pins={d.pins} pinnedIn={d.pinnedIn} items={w.overview.items} recent={w.recent} act={w.act} onOpen={openItem} />
   return frame(

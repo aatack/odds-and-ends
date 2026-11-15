@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import type { Catalog, WorkflowsAPI } from '../../shared/types'
 import { browserApi, inBrowser } from './phone'
 import { Cache, withOptimism } from './state/cache'
-import { forwardAtom, HISTORY_LIMIT, reachedAtom, sameView, VIEWED_LATELY_MS, viewedAtAtom, viewedAtom, viewsAtom, type View } from './views'
+import { forwardAtom, HISTORY_LIMIT, sameView, VIEWED_LATELY_MS, viewedAtAtom, viewedAtom, viewsAtom, type View } from './views'
 
 declare global {
   interface Window {
@@ -78,48 +78,22 @@ export function useWorkflows() {
     }
   }, [])
 
-  /** Shows an item (or any item) afresh: the stack is just it. From the list and from Next. */
-  const select = useCallback(
-    (id: string | null) => {
+  const [viewedAt, setViewedAt] = useAtom(viewedAtAtom)
+  /**
+   * The history is two stacks, each kept to `HISTORY_LIMIT`: the views opened (the top on screen), and those Back took
+   * off. Opening a view puts it on top and clears what Back took off; Back moves the top view onto the other stack;
+   * Forward moves it back. Nothing else changes either.
+   */
+  const open = useCallback(
+    (v: View) => {
       setError(null)
       setEmpty(false)
-      setViews(id ? [{ kind: 'event', id }] : [])
+      // Opening the view already on screen opens nothing new.
+      if (!sameView(views[views.length - 1], v)) setViews([...views, v].slice(-HISTORY_LIMIT))
       setForwards([])
     },
-    [setViews, setForwards],
+    [views, setViews, setForwards],
   )
-
-  /**
-   * Puts a view on top of the stack, unless it is the one already on top. With
-   * `replace`, it takes the top view's place instead (if there is one), so Back
-   * goes past it.
-   */
-  const [reached, setReached] = useAtom(reachedAtom)
-  const [viewedAt, setViewedAt] = useAtom(viewedAtAtom)
-  const open = useCallback(
-    (v: View, { replace = false, direct = !replace }: { replace?: boolean; direct?: boolean } = {}) => {
-      setError(null)
-      const top = views[views.length - 1]
-      const below = replace ? views.slice(0, -1) : views
-      if (!sameView(below[below.length - 1], v)) setViews([...below, v].slice(-HISTORY_LIMIT))
-      else if (replace) setViews(below)
-      // Somewhere new: what Back took off is no longer ahead.
-      setForwards([])
-      // Reached straight from a task: Forward from it, with nothing ahead, comes back here.
-      if (direct && top?.kind === 'event' && v.kind === 'event' && top.id !== v.id)
-        setReached((r) => Object.fromEntries([...Object.entries(r).filter(([k]) => k !== top.id), [top.id, v.id]].slice(-200)))
-    },
-    [views, setViews, setForwards, setReached],
-  )
-
-  // A task that closes leaves the history (Back and Forward pass it by), unless it is the view on screen.
-  useEffect(() => {
-    const closed = new Set(overview.items.filter((i) => i.closed).map((i) => i.id))
-    const open = (v: View) => !(v.kind === 'event' && closed.has(v.id))
-    const below = views.slice(0, -1)
-    if (!below.every(open)) setViews([...below.filter(open), ...views.slice(-1)])
-    if (!forwards.every(open)) setForwards(forwards.filter(open))
-  }, [overview.items, views, forwards, setViews, setForwards])
 
   /** Takes the top view off the stack, keeping it for Forward. */
   const back = useCallback(() => {
@@ -128,20 +102,12 @@ export function useWorkflows() {
     setForwards([...forwards, views[views.length - 1]].slice(-HISTORY_LIMIT))
   }, [views, setViews, forwards, setForwards])
 
-  /**
-   * Puts the view Back last took off on top of the stack again. With nothing to put back, goes to what was last
-   * reached straight from the task on screen, if anything was.
-   */
+  /** Puts the view Back last took off on top of the stack again. */
   const forward = useCallback(() => {
-    const top = views[views.length - 1]
-    if (!forwards.length) {
-      const to = top?.kind === 'event' ? reached[top.id] : undefined
-      if (to) setViews([...views, { kind: 'event' as const, id: to }].slice(-HISTORY_LIMIT))
-      return
-    }
+    if (!forwards.length) return
     setViews([...views, forwards[forwards.length - 1]].slice(-HISTORY_LIMIT))
     setForwards(forwards.slice(0, -1))
-  }, [views, setViews, forwards, setForwards, reached])
+  }, [views, setViews, forwards, setForwards])
 
   // What was opened here in the last half hour: Next comes to it only after everything else.
   const viewedLately = useCallback(() => {
@@ -155,9 +121,9 @@ export function useWorkflows() {
    */
   const next = useCallback(async () => {
     const id = await api().next([...viewedLately(), ...(selected ? [selected] : [])])
-    select(id)
-    setEmpty(id === null)
-  }, [selected, select, viewedLately])
+    if (id) open({ kind: 'event', id })
+    else setEmpty(true)
+  }, [selected, open, viewedLately])
 
   /**
    * After the human has done something to the task on screen: if it closed, goes on to the next that needs them.
@@ -170,7 +136,7 @@ export function useWorkflows() {
       const item = cache.get().details[id]?.item?.item
       if (item && !item.closed) return
       const to = await api().next([...viewedLately(), id])
-      if (to) open({ kind: 'event', id: to }, { direct: false })
+      if (to) open({ kind: 'event', id: to })
       else {
         open({ kind: 'items' })
         setEmpty(true)
@@ -208,5 +174,5 @@ export function useWorkflows() {
     if (shownId) markViewed(shownId)
   }, [shownId, markViewed])
 
-  return { recent, markViewed, overview, view, views, detail, loading, unsent: shown.unsent, offline: shown.offline, catalog, selected, select, open, back, forward, next, act, actOn, error, empty }
+  return { recent, markViewed, overview, view, views, detail, loading, unsent: shown.unsent, offline: shown.offline, catalog, selected, open, back, forward, next, act, actOn, error, empty }
 }
