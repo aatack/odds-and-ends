@@ -47,7 +47,10 @@ A topic is the one kind of thing people write: something said, a thing to be don
 )}
 - Topics, bots and scripts have an **owner**: whoever made it, if a person; else the owner of what it is in. It is who the item goes back to when a bot lets go of it${say('', ' (an `owns` link; set_owner changes it)')}.
 - Topics don't depend on each other. To wait on something, hand the topic to a script (below).
-- Anything can be **closed**${say(` (*Close* in its right pane, or \`Ctrl+Enter\` twice in its chat)`, ' (close_item)')}: it floats free, its owner and assignees taken off it. Reopening it${say('', ' (reopen_item)')} brings it back with them.
+- Anything can be **closed**${say(` (*Close* in its right pane, or \`Ctrl+Enter\` twice in its chat)`, ' (close_item)')}. Closing means exactly this, and nothing else: its owner and all its assignees are taken off it, and its open is set to false. Nothing in it changes. A closed bot or script has no owner, so nothing runs it. ${say(
+  `*Reopen* sets it open again and makes you its owner and assignee.`,
+  `Only a person reopens an item.`,
+)}
 
 ## Comments, notes and pins
 

@@ -477,9 +477,9 @@ test/          engine.mts: the whole engine with a fake gh and fake bots;
   pressed. Last, what can be done to it (`itemActions.ts`: Close for anything open, Reopen for anything closed; its
   type's own, `TYPE_ACTIONS`, none yet). The right pane
   draws the same list as buttons (on a phone, the header's ⋯ menu), so they never differ. There are no thumbs-ups:
-  stored `reactions` values are left as they are, and read by nothing. Closing anything sets its
-  `open` false and takes its owner and assignees off (kept as `last_owner`, `last_assignees`), so it floats free;
-  Reopen sets it true and puts them back. Spread
+  stored `reactions` values are left as they are, and read by nothing. Closing anything is three plain changes and
+  nothing else: its owner and assignees off, `open` false. Reopen (a person's, not an agent tool) sets `open` true
+  and makes whoever reopened it the owner and assignee. Spread
   it on anything that stands for an item. Clicking an item does nothing else.
 
 ## Rules

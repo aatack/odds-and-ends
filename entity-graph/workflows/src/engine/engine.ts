@@ -172,7 +172,7 @@ export class Engine extends EventEmitter {
       if (r.type !== 'bot') continue
       const last = r.params.last_run as LastRun | undefined
       // A run the app was stopped during is over; what it was on goes back to its owner, saying so.
-      if (last && last.endedAt === null && !r.resolved) {
+      if (last && last.endedAt === null && !this.ended(r)) {
         this.store.setParams(r.id, { ...r.params, last_run: { ...last, endedAt: this.now(), error: 'The app stopped during the run.' } }, `bot:${r.id}`, this.now())
         for (const itemId of last.items)
           if (this.row(itemId) && !this.isClosed(itemId) && this.assignees(itemId).includes(r.id)) {
@@ -278,10 +278,18 @@ export class Engine extends EventEmitter {
     return r ? this.type(r.type).describe(params).split('\n')[0] : id
   }
 
-  /** Whether an item is closed: its status closed (anything can be closed), or a blocker that resolved (a bot deleted, a script cancelled). */
+  /** Whether an item is closed: its status closed (anything can be closed). */
   isClosed(id: string): boolean {
     const r = this.row(id)
-    return !r || r.params.open === false || (r.type !== 'topic' && this.blocking(r.type) && r.resolved)
+    return !r || this.ended(r)
+  }
+
+  /**
+   * Whether an item is closed, from its row: `open: false`. A bot, script or person an older build cancelled (its
+   * `resolved`, never written now) reads as closed too: the data is kept as it is, not rewritten.
+   */
+  private ended(r: ItemRow): boolean {
+    return r.params.open === false || (r.type !== 'topic' && this.blocking(r.type) && r.resolved)
   }
 
   /** Who owns an item (its `owns` link), or null. */
@@ -341,7 +349,7 @@ export class Engine extends EventEmitter {
   typeScripts(type: string): ItemInfo[] {
     return this.store.owned(type).flatMap((id) => {
       const r = this.row(id)
-      return r?.type === 'script' && !r.resolved ? [this.toInfo(r)] : []
+      return r?.type === 'script' && !this.ended(r) ? [this.toInfo(r)] : []
     })
   }
 
@@ -357,7 +365,7 @@ export class Engine extends EventEmitter {
       seen.add(owner)
       for (const id of this.store.owned(owner)) {
         const r = this.row(id)
-        if (!r || r.resolved) continue
+        if (!r || this.ended(r)) continue
         if (r.type === 'script') scripts.add(id)
         else if (r.type === 'bot') walk(id)
       }
@@ -435,7 +443,7 @@ export class Engine extends EventEmitter {
       .sort((a, b) => b.since - a.since)
     const scripts = this.store
       .ofType('script')
-      .filter((r) => !r.resolved && (r.params.name || this.assignedTo(r.id).length))
+      .filter((r) => !this.ended(r) && (r.params.name || this.assignedTo(r.id).length))
       .map((r) => ({ id: r.id, named: !!r.params.name, name: String(r.params.name ?? r.params.description ?? 'Script'), wakesAt: r.next_check_at, running: this.checking.has(r.id) }))
     return { me: this.user(viewer) ?? { id: viewer, name: viewer }, items, bots: this.agents(), users: this.users(), recentAssignees: this.recentAssignees(viewer), scripts }
   }
@@ -581,7 +589,7 @@ export class Engine extends EventEmitter {
   /** A person by their username; null if there is none. */
   user(id: string): User | null {
     const r = this.row(id)
-    return r?.type === 'user' && !r.resolved ? { id, name: String(r.params.name || id) } : null
+    return r?.type === 'user' && !this.ended(r) ? { id, name: String(r.params.name || id) } : null
   }
 
   /** Whether an actor is a person. */
@@ -591,7 +599,7 @@ export class Engine extends EventEmitter {
 
   /** Who the engine acts as when nobody says: the first person, else NOBODY. The app always says. */
   me(): string {
-    return this.store.ofType('user').find((r) => !r.resolved)?.id ?? NOBODY
+    return this.store.ofType('user').find((r) => !this.ended(r))?.id ?? NOBODY
   }
 
   /** Adds a person (or names one anew). Their username is their id, and stays. */
@@ -621,7 +629,7 @@ export class Engine extends EventEmitter {
     const r = ref.trim().replace(/^@/, '')
     if (this.user(r.toLowerCase())) return r.toLowerCase()
     if (this.isOpenScript(r)) return r
-    const named = this.store.ofType('script').find((x) => !x.resolved && String(x.params.name ?? '').toLowerCase() === r.toLowerCase())
+    const named = this.store.ofType('script').find((x) => !this.ended(x) && String(x.params.name ?? '').toLowerCase() === r.toLowerCase())
     return this.findAgent(r)?.id ?? named?.id ?? null
   }
 
@@ -629,7 +637,7 @@ export class Engine extends EventEmitter {
   goneHolder(ref: string): string | null {
     const r = ref.trim().replace(/^@/, '').toLowerCase()
     const x = [...this.store.ofType('bot'), ...this.store.ofType('script')].find(
-      (x) => x.resolved && (x.id === ref.trim() || String(x.params.name ?? '').toLowerCase() === r),
+      (x) => this.ended(x) && (x.id === ref.trim() || String(x.params.name ?? '').toLowerCase() === r),
     )
     return x ? (x.type === 'bot' ? `@${String(x.params.name ?? x.id)}` : `The script ${String(x.params.name ?? x.id)}`) : null
   }
@@ -645,7 +653,7 @@ export class Engine extends EventEmitter {
   /** Whether an id is a script that is still open: one that can have tasks. */
   isOpenScript(id: string): boolean {
     const r = this.row(id)
-    return r?.type === 'script' && !r.resolved
+    return r?.type === 'script' && !this.ended(r)
   }
 
   /**
@@ -723,9 +731,9 @@ export class Engine extends EventEmitter {
       sessionId: (p.session_id as string) ?? null,
       lastRun: (p.last_run as LastRun) ?? null,
       createdAt: r.created_at,
-      deleted: r.resolved,
+      deleted: this.ended(r),
       runId: this.running.get(id)?.id ?? null,
-      wakesAt: r.resolved ? null : (this.due(id)?.at ?? null),
+      wakesAt: this.ended(r) ? null : (this.due(id)?.at ?? null),
       pausedUntil: this.pausedUntil(String(p.provider ?? 'claude')),
       assigned: this.assignedTo(id),
     }
@@ -735,7 +743,7 @@ export class Engine extends EventEmitter {
   agents(): Agent[] {
     return this.store
       .ofType('bot')
-      .filter((r) => !r.resolved)
+      .filter((r) => !this.ended(r))
       .sort((a, b) => a.created_at - b.created_at)
       .map((r) => this.agent(r.id)!)
   }
@@ -778,17 +786,11 @@ export class Engine extends EventEmitter {
     return a.id
   }
 
-  /** Deletes a bot: it is cancelled, it stops if it is running, and every task it had goes back to whoever owns it. */
+  /** Deletes a bot: closes it (see `close`). */
   async deleteAgent(id: string, actor = this.me()): Promise<void> {
     const agent = this.agent(id)
     if (!agent || agent.deleted) throw new Error(`No bot ${id}.`)
-    this.store.batch(() => {
-      for (const itemId of agent.assigned) this.handBack(itemId, id, null, actor)
-      this.resolve(id, { cancelled: true }, actor, true)
-    })
-    if (this.running.has(id)) this.onCancel(id)
-    this.emit('change')
-    await this.idle()
+    await this.close(id, { actor })
   }
 
   /** Runs a bot now, on the first item it holds, whatever it last saw. */
@@ -1035,7 +1037,7 @@ export class Engine extends EventEmitter {
     }
     const closing: string[] = []
     // A bot deleted while it ran: what it returns doesn't land.
-    if (this.row(agentId)?.resolved) {
+    if (this.isClosed(agentId)) {
       this.emit('change')
       return
     }
@@ -1097,7 +1099,7 @@ export class Engine extends EventEmitter {
       for (const itemId of run.itemIds) if (!closing.includes(itemId) && !said.has(itemId) && this.row(itemId) && !this.isClosed(itemId)) this.settle(itemId, run)
     })
     // Done for now: its next run starts a fresh session (with the handoff said once), rather than carrying this one on.
-    if (handoff && !error && !this.row(agentId)?.resolved) {
+    if (handoff && !error && !this.isClosed(agentId)) {
       this.setParam(agentId, 'handoff', handoff, actor)
       this.setParam(agentId, 'session_id', null, actor)
       this.sessionSeen.set(agentId, [])
@@ -1263,7 +1265,7 @@ export class Engine extends EventEmitter {
    */
   async runNow(itemId: string, actor = this.me(), given: { item?: string | null; focus?: string | null } = {}): Promise<void> {
     const r = this.row(itemId)
-    if (r?.type !== 'script' || r.resolved) throw new Error('There is nothing to run.')
+    if (r?.type !== 'script' || this.ended(r)) throw new Error('There is nothing to run.')
     this.pressed.set(itemId, actor)
     const error = await this.runScriptItem(itemId, given)
     if (error) throw new Error(error)
@@ -1384,9 +1386,8 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * Opens a closed item again (its status open): its owner and who had it come back, as they were when it closed
-   * (`last_owner`, `last_assignees`), but for bots and scripts gone since. What its closing cancelled stays cancelled.
-   * A topic's chat says who reopened it. A cancelled script or bot comes back as it was, holding nothing.
+   * Opens a closed item again: `open: true` (only if it is `false`), owned by and assigned to whoever reopened it. Who
+   * had it before is in the log, not brought back. A person's action: agents aren't given it as a tool.
    */
   async reopen(itemId: string, actor = this.me()): Promise<void> {
     const row = this.row(itemId)
@@ -1394,15 +1395,12 @@ export class Engine extends EventEmitter {
     if (!this.isClosed(itemId)) return
     this.store.batch(() => {
       if (row.params.open === false) this.store.setOpen(itemId, true, actor, this.now())
-      if (row.resolved && row.type !== 'topic' && this.blocking(row.type)) this.store.reopenItem(itemId, actor, this.now())
-      const { last_owner: owner, last_assignees: had } = row.params
-      if (typeof owner === 'string' && !this.owner(itemId) && this.holder(owner) === owner) this.store.setOwner(itemId, owner, actor, this.now())
-      for (const a of Array.isArray(had) ? had.map(String) : []) if (this.holder(a) === a && !this.assignees(itemId).includes(a)) this.setAssignee(itemId, a, true, actor)
-      if (owner !== undefined || had !== undefined) {
-        const { last_owner: _o, last_assignees: _a, ...rest } = this.row(itemId)!.params
-        this.store.setParams(itemId, rest, actor, this.now())
+      // What an older build cancelled (its `resolved`) is open again only by clearing that.
+      else if (row.resolved && row.type !== 'topic' && this.blocking(row.type)) this.store.reopenItem(itemId, actor, this.now())
+      if (this.isUser(actor)) {
+        if (this.owner(itemId) !== actor) this.store.setOwner(itemId, actor, actor, this.now())
+        if (!this.assignees(itemId).includes(actor)) this.setAssignee(itemId, actor, true, actor)
       }
-      if (row.type === 'topic') this.add(itemId, [{ type: 'topic', params: { text: `Reopened by ${this.actorName(actor)}.` } }], 'system')
     })
     this.emit('change')
     if (actor !== 'script') await this.idle()
@@ -1507,31 +1505,21 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * Closes any item (its status closed), and lets it float free: its owner and assignees are taken off it, kept as
-   * `last_owner` and `last_assignees` for `reopen`. A topic's open blockers are cancelled (topics and scripts in it are
-   * left as they are: they don't depend on it); a bot is deleted, and a script or other blocker cancelled, handing back
-   * what they had.
+   * Closes any item, and that is all it does: its owner and its assignees are taken off it, and its `open` is `false`.
+   * Nothing in it, nothing it holds and nobody's work is touched beyond that: a closed bot or script has no owner, so
+   * nothing runs it (one running now is stopped).
    */
   async close(itemId: string, opts: { actor?: string } = {}): Promise<void> {
     const actor = opts.actor ?? this.me()
     const row = this.row(itemId)
     if (!row) throw new Error(`No item ${itemId}.`)
     if (this.isClosed(itemId)) return
-    if (row.type === 'bot') await this.deleteAgent(itemId, actor)
     this.store.batch(() => {
-      const owner = this.owner(itemId)
-      const had = this.assignees(itemId)
-      if (row.type === 'topic')
-        for (const b of this.children(itemId, true)) if (b.type !== 'script') this.resolve(b.id, { cancelled: true, detail: 'Its topic closed.' }, actor, true)
-      if (owner || had.length)
-        this.store.setParams(itemId, { ...row.params, ...(owner ? { last_owner: owner } : {}), ...(had.length ? { last_assignees: had } : {}) }, actor, this.now())
-      for (const a of had) this.setAssignee(itemId, a, false, actor)
-      if (owner) this.store.setOwner(itemId, null, actor, this.now())
-      // A blocker resolves (cancelled), as it always has; anything else takes the status closed.
-      if (row.type !== 'topic' && this.blocking(row.type)) {
-        if (!row.resolved) this.resolve(itemId, { cancelled: true }, actor, true)
-      } else this.store.setOpen(itemId, false, actor, this.now())
+      for (const a of this.assignees(itemId)) this.setAssignee(itemId, a, false, actor)
+      if (this.owner(itemId)) this.store.setOwner(itemId, null, actor, this.now())
+      this.store.setOpen(itemId, false, actor, this.now())
     })
+    if (row.type === 'bot' && this.running.has(itemId)) this.onCancel(itemId)
     this.emit('change')
     if (actor !== 'script') await this.idle() // a script waiting on its own queue would wait for itself
   }
@@ -1550,7 +1538,7 @@ export class Engine extends EventEmitter {
   async checkDue(): Promise<void> {
     const now = this.now()
     const runnable = this.runnableScripts()
-    const open = this.store.ofType('script').filter((r) => !r.resolved && runnable.has(r.id))
+    const open = this.store.ofType('script').filter((r) => !this.ended(r) && runnable.has(r.id))
     for (const r of open) r.next_check_at = this.due(r.id)?.at ?? null
     const due = open.filter((r) => r.next_check_at !== null && r.next_check_at <= now && !this.checking.has(r.id)).sort((a, b) => a.next_check_at! - b.next_check_at!)
     const room = Math.max(0, Number(this.settings.get('scripts.max_running', MAX_SCRIPTS)) - this.checking.size)
@@ -1567,7 +1555,7 @@ export class Engine extends EventEmitter {
     this.checking.add(id)
     return this.serial(id, async () => {
       const row = this.row(id)
-      if (!row || row.resolved) return null
+      if (!row || this.ended(row)) return null
       const pressedBy = this.pressed.get(id) ?? null
       this.pressed.delete(id)
       const pressed = !!pressedBy && this.isUser(pressedBy)

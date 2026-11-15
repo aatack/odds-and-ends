@@ -220,7 +220,7 @@ await settle()
 assert.deepEqual(item(id).assignees, ['human'])
 await engine.close(id)
 assert.ok(item(id).closed)
-assert.ok(!engine.info(ci)!.resolved, 'a script lasts: neither handing its topics on nor its task closing ends it')
+assert.ok(!engine.info(ci)!.closed, 'a script lasts: neither handing its topics on nor its task closing ends it')
 
 // ---- 5. Child tasks: a bot splits work off and gives it to itself; the child blocks nothing ----
 const parent = (await engine.create('Parent'))!
@@ -350,14 +350,19 @@ await engine.close(loose)
   await engine.close(t2)
 }
 
-// A closed task can be reopened: who has it is unchanged; it is open again, and says who reopened it.
+// Closing is plain: owner and assignees off, open false. Reopening sets open true, owned by and assigned to who did it.
 {
   const t = (await engine.create('Reopen me'))!
+  await engine.assign(t, threepio, true)
+  const said = engine.children(t).length
   await engine.close(t)
   assert.ok(item(t).closed)
+  assert.deepEqual([engine.owner(t), engine.assignees(t)], [null, []])
+  assert.equal(engine.children(t).length, said, 'closing says nothing')
   await engine.reopen(t)
   assert.ok(!item(t).closed && item(t).withYou)
-  assert.match(String(last(t, 'topic').params.text), /^Reopened by /)
+  assert.deepEqual([engine.owner(t), engine.assignees(t)], [engine.me(), [engine.me()]], 'whoever reopened it has it; not who had it before')
+  assert.equal(engine.children(t).length, said, 'reopening says nothing')
   assert.equal((await engine.inspect(t)).values.open, true)
   await engine.close(t)
 }
@@ -747,11 +752,10 @@ return { state: { last: ids[0] } }`
   assert.equal(engine.info(t)!.params.sleepUntil, undefined)
   await engine.close(t)
   await engine.cancel(snooze)
-  assert.ok(engine.info(snooze)!.resolved)
-  // A cancelled script can be reopened, as it was.
+  assert.ok(engine.info(snooze)!.closed)
+  // A closed script can be reopened, as it was.
   await engine.reopen(snooze)
-  assert.equal(engine.info(snooze)!.resolved, false)
-  assert.equal(engine.info(snooze)!.cancelled, false)
+  assert.equal(engine.info(snooze)!.closed, false)
   assert.ok(engine.info(snooze)!.params.source)
   await engine.cancel(snooze)
 }
@@ -801,14 +805,14 @@ await engine.close(bad)
   await tick()
   await tick()
   assert.deepEqual([item(a).assignees, item(b).assignees], [['human'], ['human']], 'it hands its topics on')
-  assert.ok(!engine.info(watch)!.resolved, 'and lasts (an old `done: true` is ignored)')
+  assert.ok(!engine.info(watch)!.closed, 'and lasts (an old `done: true` is ignored)')
   // A run that throws says so in its chat, once till the error changes, and carries on.
   const [bad2] = await engine.addItems(null, [{ type: 'script', params: { name: 'Bad', source: 'throw new Error("nope " + Math.min(context.runs, 1))', cycle_minutes: 1 } }])
   await engine.assign(a, bad2, true)
   clock += 1
   await tick()
   const said = () => engine.children(bad2).filter((e) => e.type === 'topic').map((e) => String(e.params.text))
-  assert.ok(!engine.info(bad2)!.resolved, 'a failing run does not end it')
+  assert.ok(!engine.info(bad2)!.closed, 'a failing run does not end it')
   assert.equal(said().length, 1)
   assert.match(said()[0], /^Bad failed: The script failed: nope 0$/)
   clock += MINUTE
@@ -818,7 +822,7 @@ await engine.close(bad)
   assert.equal(engine.info(bad2)!.runs, 3, 'it runs again on its cycle')
   assert.equal(said().length, 2, 'a new error is said; the same one again is not')
   await engine.cancel(bad2)
-  assert.ok(engine.info(bad2)!.resolved, 'cancelling is the only way it goes')
+  assert.ok(engine.info(bad2)!.closed, 'closing is the only way it goes')
   // One that holds nothing runs only when pressed.
   const [manual] = await engine.addItems(null, [{ type: 'script', params: { source: 'return null' } }])
   clock += 60 * MINUTE
@@ -827,7 +831,7 @@ await engine.close(bad)
   await engine.runNow(manual)
   await engine.runNow(manual)
   assert.equal(engine.info(manual)!.runs, 2)
-  assert.ok(!engine.info(manual)!.resolved)
+  assert.ok(!engine.info(manual)!.closed)
   // Unsafe tools: a script has them, pressed or on its own, for now.
   const unsafeSource = `await tools.post_somewhere({ text: 'pressed' }); return null`
   const [press] = await engine.addItems(null, [{ type: 'script', params: { source: unsafeSource } }], 'bot', 'bot')
@@ -859,9 +863,10 @@ await engine.close(bad)
   await engine.cancel(temp)
   release()
   await settle()
-  assert.ok(engine.info(temp)!.cancelled)
+  assert.ok(engine.info(temp)!.closed)
   assert.ok(!item(taken).closed)
-  assert.deepEqual(item(taken).assignees, ['human'])
+  assert.equal(item(taken).bot, null, 'closing a bot stops it')
+  assert.equal(engine.owner(taken), 'human', 'what it held stays where it was: still owned, so still listed')
   await engine.close(taken)
 }
 
@@ -959,10 +964,11 @@ await engine.close(bad)
   })
   await settle()
   assert.deepEqual(item(a).assignees, ['human'])
-  // Deleting a bot hands what it had back.
+  // Deleting a bot closes it: what it had stays with it (closing touches nothing else), and nothing runs it.
   await engine.assign(a, r2, true)
   await engine.deleteAgent(r2)
-  assert.deepEqual(item(a).assignees, ['human'])
+  assert.ok(engine.isClosed(r2))
+  assert.deepEqual(item(a).assignees, ['human', r2])
   await engine.close(a)
 }
 
@@ -1130,7 +1136,7 @@ assert.deepEqual(unexpected, [], 'no bot ran that no test expected')
   assert.deepEqual((await runScript('return 1', { id: 'x' }, slow)).value, 1, 'and the next script still runs')
 }
 
-// Closing anything floats it free (no owner, no assignees, kept for reopening); reopening brings both back.
+// Closing anything floats it free (no owner, no assignees, open false); reopening makes it whoever reopened it's.
 {
   const t = (await engine.create('Float free'))!
   await engine.assign(t, 'sam', true)
@@ -1142,8 +1148,7 @@ assert.deepEqual(unexpected, [], 'no bot ran that no test expected')
   await engine.reopen(t)
   assert.ok(!item(t).closed)
   assert.equal(engine.owner(t), 'human')
-  assert.deepEqual(item(t).assignees, ['human', 'sam'])
-  assert.equal((await engine.inspect(t)).values.last_owner, undefined, 'what was kept for reopening goes once it is used')
+  assert.deepEqual(item(t).assignees, ['human'])
   await engine.close(t)
   const [link] = await engine.addItems(null, [{ type: 'link', params: { url: 'https://example.com/closable' } }])
   await engine.assign(link, 'sam', true)
@@ -1152,7 +1157,7 @@ assert.deepEqual(unexpected, [], 'no bot ran that no test expected')
   assert.deepEqual(engine.assignees(link), [])
   await engine.setValue(link, 'open', true)
   assert.ok(!engine.isClosed(link))
-  assert.deepEqual(engine.assignees(link), ['sam'])
+  assert.deepEqual(engine.assignees(link), ['human'])
   await engine.close(link)
 }
 

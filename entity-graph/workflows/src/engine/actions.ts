@@ -377,7 +377,7 @@ export const itemActions: Action[] = [
   {
     name: 'cancel_item',
     unsafe: false,
-    description: 'The old name for close_item: close any item (a blocker ends without happening; a bot is deleted).',
+    description: 'The old name for close_item.',
     input: { item_id: z.string() },
     run: async (a, ctx) => {
       await ctx.engine.cancel(String(a.item_id), ctx.actor)
@@ -385,19 +385,9 @@ export const itemActions: Action[] = [
     },
   },
   {
-    name: 'reopen_item',
-    unsafe: false,
-    description: 'Open a closed item again (its status open): its owner and assignees come back as they were when it closed. What its closing cancelled stays cancelled. A cancelled script or bot comes back too, holding nothing.',
-    input: { item_id: itemId },
-    run: async (a, ctx) => {
-      await ctx.engine.reopen(String(a.item_id), ctx.actor)
-      return 'Reopened.'
-    },
-  },
-  {
     name: 'close_item',
     unsafe: false,
-    description: 'Close any item (its status closed): its owner and assignees are taken off it, and come back if it is reopened. A topic\'s open blockers are cancelled (topics in it are left open); a bot is deleted; a script cancelled.',
+    description: 'Close any item. Closing means exactly this: its owner and every assignee are taken off it, and its open is set to false. Nothing else changes: what is in it stays as it is. A closed bot or script has no owner, so nothing runs it.',
     input: { item_id: itemId },
     run: async (a, ctx) => {
       await ctx.engine.close(String(a.item_id), { actor: ctx.actor })

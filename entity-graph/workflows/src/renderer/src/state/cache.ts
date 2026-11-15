@@ -411,8 +411,9 @@ function patchFor(w: Write, me: string): Patch {
       const [id] = a as [string]
       return patchItem(
         id,
-        (i) => ({ ...i, closed: false, open: i.open === null ? null : true, closedAt: null }),
-        (i) => ({ ...i, closed: false }),
+        // Whoever reopens it has it (engine `reopen`).
+        (i) => ({ ...i, closed: false, open: i.open === null ? null : true, closedAt: null, owner: me, assignees: [me], withYou: !i.blockers.length }),
+        (i) => ({ ...i, closed: false, owner: me, assignees: [me] }),
       )
     }
     case 'assign': {
