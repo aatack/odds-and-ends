@@ -1,6 +1,5 @@
 import { Mic, SendHorizontal, Square } from 'lucide-react'
 import { useHasDeepgram, useRecorder } from './recorder'
-import { SLACK_LINK } from '../../shared/slack'
 import { useAtom } from 'jotai'
 import { useEffect, useRef, useState } from 'react'
 import type { Catalog, Item, PresetInfo } from '../../shared/types'
@@ -128,13 +127,6 @@ export function Composer({
           value={text}
           mentions={{ ...mention, bots: assignees }}
           aria-label={preset.name}
-          onPaste={(e) => {
-            // A Slack message's link, pasted on its own into an empty input, pulls the message in at once.
-            const pasted = e.clipboardData.getData('text').trim()
-            if (text.trim() || !new RegExp(`^${SLACK_LINK.source}$`).test(pasted)) return
-            e.preventDefault()
-            void onSend('note', pasted)
-          }}
           onText={(value) => {
             // `/` as the first thing typed: pick a tool to run, rather than typing it.
             if (!text && value === '/') return setRunningTool(true)

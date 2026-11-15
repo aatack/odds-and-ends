@@ -37,3 +37,14 @@ export function inferType(id: string, values: Record<string, unknown> = {}): Inf
   if (typeof values.text === 'string') return { type: 'topic', params: keep }
   return null
 }
+
+/**
+ * What something pasted (or dropped) becomes, wherever it lands: a web address alone what `inferUrl` says, with the
+ * address as its id (the one item for it); a kept file (its name, hash and size) a file; any other text a topic.
+ */
+export function inferPasted(p: { text: string } | { file: { name: string; hash: string; size: number } }, now = Date.now()): Inferred & { id?: string } {
+  if ('file' in p) return inferType('', p.file)!
+  const url = p.text.trim()
+  const byUrl = /^\S+$/.test(url) ? inferUrl(url, now) : null
+  return byUrl ? { ...byUrl, id: url } : inferType('', { text: p.text })!
+}

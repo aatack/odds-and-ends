@@ -13,6 +13,14 @@ import type { Op } from 'egdb-client'
 export type ItemKind = 'topic' | 'script' | 'link' | 'github_pr' | 'slack_message' | 'slack_channel' | 'file' | 'bot' | 'user'
 
 /** An item as it is added. `ref` names it, so another added alongside can point at it. */
+/**
+ * Where something pasted goes: in an item's comments or notes (`into`; null, in none: a file pasted into a text box,
+ * which then refers to it), pinned to an item (`pinTo`), or an item pinned to it (`pinIn`).
+ */
+export type PasteTarget = { into: string | null; via?: 'comments' | 'notes' } | { pinTo: string } | { pinIn: string }
+/** What was pasted: text, or a file (its name and its bytes, base64). */
+export type Pasted = { text: string } | { file: { name: string; base64: string } }
+
 export interface ItemSpec {
   /** Its type; an older build's `task` and `note` are taken as topics. */
   type: ItemKind | 'task' | 'note'
@@ -423,6 +431,11 @@ export interface WorkflowsAPI {
   addItems: (itemId: string | null, specs: ItemSpec[], via?: 'comments' | 'notes') => Promise<string[]>
   /** Keeps a file (its bytes, base64) with the source, as a file item in the task: answers its id. */
   uploadFile: (itemId: string, name: string, base64: string) => Promise<string>
+  /**
+   * Something pasted or dropped, made the item it looks like (`inferPasted`: a web address what it is, a file a file,
+   * other text a topic) and put where it was pasted (`PasteTarget`). Answers the item's id.
+   */
+  paste: (target: PasteTarget, pasted: Pasted) => Promise<string>
   /** A file item's bytes (base64), name and type. */
   fileData: (itemId: string) => Promise<{ name: string; mime: string; base64: string }>
   /** A file item as text (null unless it is text), whether it can be edited (a file here, not a kept copy), and how it stands. */
@@ -558,7 +571,7 @@ export interface LogEntry {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'write', 'egdb', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'setOpen', 'moveItem', 'newNotes', 'subtree', 'setInferredType', 'finder', 'items', 'setOwner', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'write', 'egdb', 'addItems', 'uploadFile', 'paste', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'setOpen', 'moveItem', 'newNotes', 'subtree', 'setInferredType', 'finder', 'items', 'setOwner', 'editLog',
   'typeScripts', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'slackConversations', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',

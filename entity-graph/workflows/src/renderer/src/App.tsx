@@ -24,6 +24,7 @@ import { ItemRef } from './ItemRef'
 import { Pill } from './sizes'
 import { DISPLAYS, displayOf, type Display } from '../../shared/views'
 import { FileFocus, uploadFiles } from './FileView'
+import { pasteHere, usePaste } from './paste'
 import { NotesView } from './notes/NotesView'
 import { EgdbProvider } from 'egdb-client/react'
 import { newEgdb } from './egdb'
@@ -121,6 +122,7 @@ function WithEgdb({ user, children }: { user: string; children: ReactNode }) {
 
 export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSignOut: () => void; onCloseSource: () => void }) {
   const items = useWorkflows()
+  usePaste(items.act)
   // Ctrl+W, Alt+Left and Ctrl+Shift+Tab (sent by the main process) take the top view off the stack; Alt+Right and Ctrl+Tab put it back.
   const { back, forward, open } = items
   useEffect(() => api().onBack(back), [back])
@@ -730,12 +732,13 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
   }, [item.id])
   // Whoever has it, unless it is you, says how it stands where their message will appear: a bot working or due to
   // wake, a script running or due to run. In a bot's own chat, the bot itself.
-  // A file dropped on the chat, or pasted into it, is kept as a file item here.
+  // A file dropped on the chat is kept as a file item here; what is pasted on it (not in its input) is said here (`pasteHere`).
   const [dropping, setDropping] = useState(false)
   const take = (files: File[]) => files.length > 0 && !item.closed && void act(() => uploadFiles(item.id, files))
   return (
     <div
       className={`item ${dropping ? 'dropping' : ''}`}
+      {...pasteHere({ into: item.id })}
       onDragOver={(ev) => {
         if (![...ev.dataTransfer.types].includes('Files')) return
         ev.preventDefault()
@@ -747,12 +750,6 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
         if (!ev.dataTransfer.files.length) return
         ev.preventDefault()
         take([...ev.dataTransfer.files])
-      }}
-      onPaste={(ev) => {
-        const files = [...ev.clipboardData.files]
-        if (!files.length) return
-        ev.preventDefault()
-        take(files)
       }}
     >
       {detail.parent && !bare && (

@@ -10,6 +10,7 @@ import type { ItemInfo } from '../../shared/types'
 import { Dropdown, DropdownItem } from './components/ui/Dropdown'
 import { CodeBlock } from './components/ui/CodeBlock'
 import { Markdown } from './components/ui/Markdown'
+import { asFile } from './paste'
 import { api } from './useWorkflows'
 
 const PdfPreview = lazy(() => import('./FilePreviews').then((m) => ({ default: m.PdfPreview })))
@@ -376,12 +377,7 @@ export function parseCsv(text: string): string[][] {
   return rows
 }
 
-/** Reads files given to the window (dropped or pasted) and keeps each as a file item in the task. */
+/** Reads files given to the window (dropped) and keeps each as a file item in the task, as a paste would. */
 export async function uploadFiles(itemId: string, files: File[]): Promise<void> {
-  for (const f of files) {
-    const bytes = new Uint8Array(await f.arrayBuffer())
-    let bin = ''
-    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-    await api().uploadFile(itemId, f.name || 'pasted', btoa(bin))
-  }
+  for (const f of files) await api().paste({ into: itemId }, await asFile(f))
 }

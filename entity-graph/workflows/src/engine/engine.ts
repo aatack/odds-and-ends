@@ -8,7 +8,7 @@ import { mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { Agent, ItemInfoDetail, ItemSpec, Item, ItemDetail, ItemInfo, LastRun, Overview, User } from '../shared/types'
+import type { Agent, ItemInfoDetail, ItemSpec, Pasted, PasteTarget, Item, ItemDetail, ItemInfo, LastRun, Overview, User } from '../shared/types'
 import { current, itemActions } from './actions'
 import { asTopic, ITEM_TYPES, scriptResult } from './itemTypes'
 import { execCli, type Action, type ActionContext, type Author, type ItemType, type Exec, type Integration } from './integrations'
@@ -19,7 +19,7 @@ import type { Op } from 'egdb-client'
 import { ROOT, STATE_KEYS, Store, type ItemRow, type Inspection, type Via } from './store'
 import { viewText, type Size, type Who } from './views'
 import { focusKind } from '../shared/views'
-import { inferType, inferUrl } from '../shared/infer'
+import { inferPasted, inferType, inferUrl } from '../shared/infer'
 
 /** What the app keeps on items for itself: never set by `setValue`. */
 const OWN_KEYS = new Set(['session_id', 'seen', 'last_run', 'last_wake', 'last_seen', 'handoff', 'key', 'last_owner', 'last_assignees'])
@@ -1424,11 +1424,40 @@ export class Engine extends EventEmitter {
     return r.params
   }
 
-  /** A person's upload (or paste, or drop): kept with the source, as a file item in the task. */
+  /** A person's upload: kept with the source, as a file item in the task (`paste`). */
   async uploadFile(parentId: string, name: string, base64: string, actor = this.me()): Promise<string> {
-    const bytes = Buffer.from(base64, 'base64')
-    const hash = this.files.keep(bytes)
-    const [id] = await this.addItems(parentId, [{ type: 'file', params: { name: name || 'file', hash, size: bytes.length } }], actor)
+    return this.paste({ into: parentId }, { file: { name, base64 } }, actor)
+  }
+
+  /**
+   * Something a person pasted (or dropped), made the item it looks like (`inferPasted`, the one place that says what a
+   * paste is) and put where it was pasted: in an item's comments or notes, pinned to an item, an item pinned to it, or
+   * in none (a file pasted into a text box, which refers to it). A web address that has its item already is that item;
+   * put in an item while it is in another, it is said there instead, as a topic of the address. Answers the item's id.
+   */
+  async paste(target: PasteTarget, pasted: Pasted, actor = this.me()): Promise<string> {
+    const kept = 'file' in pasted ? Buffer.from(pasted.file.base64, 'base64') : null
+    const got = inferPasted(
+      'file' in pasted ? { file: { name: pasted.file.name || 'file', hash: this.files.keep(kept!), size: kept!.length } } : { text: pasted.text },
+      this.now(),
+    )
+    const spec: ItemSpec = { type: got.type as ItemSpec['type'], params: got.params }
+    const into = 'into' in target ? target.into : null
+    const via = ('into' in target && target.via) || 'comments'
+    if (into && !this.row(into)) throw new Error(`No item ${into}.`)
+    if (into && via === 'comments' && this.isClosed(into)) throw new Error('This topic is closed.')
+    const id = this.store.batch(() => {
+      if (!got.id) return this.addNow(into, this.prepare([spec], 'human'), actor, into, via)[0]
+      if (!this.row(got.id)) this.addAs(got.id, spec, actor)
+      if (!into) return got.id
+      if (this.row(got.id)!.parent_id) return this.addNow(into, this.prepare([{ type: 'topic', params: { text: got.id } }], 'human'), actor, into, via)[0]
+      this.store.move(got.id, into, via, actor, this.now())
+      return got.id
+    })
+    if ('pinTo' in target) this.store.pin(target.pinTo, id, actor, this.now())
+    if ('pinIn' in target) this.store.pin(id, target.pinIn, actor, this.now())
+    this.emit('change')
+    await this.idle()
     return id
   }
 

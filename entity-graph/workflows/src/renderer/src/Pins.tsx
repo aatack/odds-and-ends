@@ -1,9 +1,10 @@
 import { Play, Plus, X } from 'lucide-react'
 import { useState } from 'react'
-import type { Item, ItemInfo } from '../../shared/types'
+import type { Item, ItemInfo, PasteTarget } from '../../shared/types'
 import { pillText } from '../../shared/text'
 import { ItemInfoIcon } from './icons'
 import { ItemPicker } from './ItemPicker'
+import { pasteHere } from './paste'
 import type { Recent } from './sections'
 import { Pill } from './sizes'
 import { api } from './useWorkflows'
@@ -23,6 +24,7 @@ export function Pins(props: { id: string; pins: ItemInfo[]; pinnedIn: ItemInfo[]
       <PinList
         title="Pinned"
         {...props}
+        paste={{ pinTo: id }}
         shown={pins}
         pin={(other) => void act(() => api().pin(id, [other], true))}
         unpin={(other) => void act(() => api().pin(id, [other], false))}
@@ -32,6 +34,7 @@ export function Pins(props: { id: string; pins: ItemInfo[]; pinnedIn: ItemInfo[]
       <PinList
         title="Pinned in"
         {...props}
+        paste={{ pinIn: id }}
         shown={pinnedIn}
         pin={(other) => void act(() => api().pin(other, [id], true))}
         unpin={(other) => void act(() => api().pin(other, [id], false))}
@@ -56,6 +59,8 @@ function PinList(props: {
   pin: (id: string) => void
   unpin: (id: string) => void
   make: (title: string) => void
+  /** Where what is pasted on it goes: pinned here. */
+  paste: PasteTarget
   /** Given, a script pinned here has a play button: it runs on the item it is pinned to, with the item on screen as focus. */
   run?: (script: string, focus: string | null) => void
 }) {
@@ -63,7 +68,7 @@ function PinList(props: {
   const onScreen = useOnScreen()
   const [picking, setPicking] = useState(false)
   return (
-    <section className="side-section">
+    <section className="side-section" {...pasteHere(props.paste)}>
       <h3 className="side-heading">
         {title}
         <button data-ui className="side-add" title={`${title}: add`} aria-label={`${title}: add`} onClick={() => setPicking(true)}>

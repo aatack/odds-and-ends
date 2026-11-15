@@ -19,6 +19,7 @@ import { TextInput, type Mentions } from '../TextInput'
 import { findAtom } from '../views'
 import { clearNotesError, createNote, notesError, moveNote, resolve, setNoteOpen, setNoteValue, useNotes, type NotesTree } from './store'
 import { Margin } from '../Margin'
+import { pasteHere } from '../paste'
 import './notes.css'
 
 const storage = <T,>() => createJSONStorage<T>(() => localStorage)
@@ -365,7 +366,8 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
   }
 
   return (
-    <div className={`notes ${mobile ? 'mobile' : ''}`}>
+    // What is pasted here (not into a box) goes in the selected row's notes (`pasteHere`).
+    <div className={`notes ${mobile ? 'mobile' : ''}`} {...pasteHere({ into: selected?.id ?? root, via: 'notes' })}>
       {info.parentId && !bare && (
         <div className="meta item-parent">
           in{' '}
