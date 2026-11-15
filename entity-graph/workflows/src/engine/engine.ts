@@ -1529,15 +1529,24 @@ export class Engine extends EventEmitter {
   /**
    * Once, for a store from before tasks were what someone owns: an older build made whoever wrote a topic its owner, so
    * every comment and note was owned. Takes the owner off each topic that was no task then (never given a status, its
-   * `open`, and nobody has it), so only tasks are owned, and the lists stay as they were. Answers how many. A person's.
+   * `open`, and nobody has it), so only tasks are owned. And an older build's close was `open: false` (or `resolved`,
+   * read as that) and could leave its owner and assignees on: each topic closed so (one not in a tree of notes, where
+   * `open: false` is a ticked box) has them taken off, so it stays done. The lists stay as they were. Answers how many
+   * of each. A person's.
    */
-  async disownComments(actor = this.me()): Promise<number> {
-    const was = this.store.ofType('topic').filter((r) => typeof r.params.open !== 'boolean' && this.owner(r.id) && !this.assignees(r.id).length)
+  async disownComments(actor = this.me()): Promise<{ comments: number; closed: number }> {
+    const topics = this.store.ofType('topic')
+    const comments = topics.filter((r) => typeof r.params.open !== 'boolean' && this.owner(r.id) && !this.assignees(r.id).length)
+    const closed = topics.filter((r) => r.params.open === false && r.via !== 'notes' && (this.owner(r.id) || this.assignees(r.id).length))
     this.store.batch(() => {
-      for (const r of was) this.store.setOwner(r.id, null, actor, this.now())
+      for (const r of comments) this.store.setOwner(r.id, null, actor, this.now())
+      for (const r of closed) {
+        for (const a of this.assignees(r.id)) this.store.setAssigned(r.id, a, false, actor, this.now())
+        if (this.owner(r.id)) this.store.setOwner(r.id, null, actor, this.now())
+      }
     })
     this.emit('change')
-    return was.length
+    return { comments: comments.length, closed: closed.length }
   }
 
   /**

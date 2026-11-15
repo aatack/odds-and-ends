@@ -1221,11 +1221,14 @@ assert.deepEqual(unexpected, [], 'no bot ran that no test expected')
 // A store from before: whoever wrote a topic owned it. disown_comments takes the owner off those that were no task.
 {
   const me = engine.me()
-  const [said, task, held] = await engine.addItems(null, [{ type: 'topic', params: { text: 'Said' } }, { type: 'topic', params: { text: 'A task', open: true } }, { type: 'topic', params: { text: 'Held' } }], me)
-  for (const id of [said, task, held]) engine.store.setOwner(id, me, me, clock)
+  const [said, task, held, shut] = await engine.addItems(null, [{ type: 'topic', params: { text: 'Said' } }, { type: 'topic', params: { text: 'A task', open: true } }, { type: 'topic', params: { text: 'Held' } }, { type: 'topic', params: { text: 'Shut long ago', open: false } }], me)
+  for (const id of [said, task, held, shut]) engine.store.setOwner(id, me, me, clock)
   engine.setAssignee(held, threepio, true, me)
-  assert.match(String(await engine.callAction('disown_comments', {}, { engine, author: 'human', actor: me, itemId: null, runId: null })), /Took the owner off \d+ topics/)
+  engine.setAssignee(shut, threepio, true, me)
+  assert.ok(!engine.info(shut)!.closed, 'closed by an older build, its links left on: it reads as a task again')
+  assert.match(String(await engine.callAction('disown_comments', {}, { engine, author: 'human', actor: me, itemId: null, runId: null })), /Took the owner off \d+ comments, and the owner and assignees off \d+ topics closed before/)
   assert.deepEqual([engine.owner(said), engine.owner(task), engine.owner(held)], [null, me, me])
+  assert.deepEqual([engine.owner(shut), engine.assignees(shut), engine.info(shut)!.closed], [null, [], true])
   await engine.close(task)
   await engine.close(held)
 }

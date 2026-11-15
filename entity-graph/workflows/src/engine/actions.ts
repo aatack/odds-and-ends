@@ -426,9 +426,12 @@ export const itemActions: Action[] = [
     name: 'disown_comments',
     unsafe: true,
     description:
-      'Once, for a store from before tasks were what someone owns: takes the owner off every topic that was no task then (never given a status, and nobody has it), so only tasks are owned. Says how many. Only when a person asks.',
+      'Once, for a store from before tasks were what someone owns: takes the owner off every topic that was no task then (never given a status, and nobody has it), so only tasks are owned; and the owner and assignees off every topic an older build closed (open false, outside a tree of notes) but left them on, so it stays done. Says how many. Only when a person asks.',
     input: {},
-    run: async (_a, ctx) => `Took the owner off ${await ctx.engine.disownComments(ctx.actor)} topics.`,
+    run: async (_a, ctx) => {
+      const n = await ctx.engine.disownComments(ctx.actor)
+      return `Took the owner off ${n.comments} comments, and the owner and assignees off ${n.closed} topics closed before.`
+    },
   },
   {
     name: 'close_item',
