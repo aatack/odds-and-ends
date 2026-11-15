@@ -2,6 +2,7 @@
 // the one list both MCP scopes serve and scripts are handed.
 
 import { z } from 'zod'
+import type { Op } from 'egdb-client'
 import { runScript } from './script'
 import type { ItemSpec } from '../shared/types'
 import type { Action } from './integrations'
@@ -358,6 +359,43 @@ export const itemActions: Action[] = [
       t.set(a.value ?? null, actor)
       const { set: _, ...now } = tunable(engine).find((x) => x.key === a.key)!
       return now
+    },
+  },
+  {
+    name: 'write',
+    unsafe: false,
+    description: [
+      'Change items with raw egdb ops: the one write. Ops are applied in order, as one change, as you.',
+      '- `{ set: { entity, key, value } }` sets a value (null clears it). On an id no item has, with key `type`, it makes an item of that id (a new UUID you choose); the batch\'s other sets on that id are its values. Whoever makes an item owns it, and a new open topic is assigned to them too, as with add_items.',
+      '- `{ link: { source, destination, link_type, sort } }` adds a link; `sort: "removed"` takes it off. `sort` is `"timestamp"` (after the rest) or `{ explicit: n }`. Link types: `comments` (source holds destination in its chat), `notes` (in its tree), `assignees` (item → person, bot or script it is assigned to), `owns` (owner → item; one owner, a new one replaces the last), `pins` (item → what is pinned to it).',
+      'Actions, as ops:',
+      '- comment in a topic T: `set(id, type, "topic")`, `set(id, text, "…")`, `link(T, id, comments)`. A thing to be done: also `set(id, open, true)`. A note in its tree: `link(T, id, notes)`.',
+      '- assign X to B: `link(X, B, assignees)`; take it off: the same with `sort: "removed"`. Hand it on: both.',
+      '- close X: unlink its owner (`link(owner, X, owns, removed)`), unlink each assignee, and `set(X, open, false)`. That is all closing is. Only a person reopens.',
+      '- own: `link(person, X, owns)`. Pin P to X: `link(X, P, pins)`. Move X into Y\'s notes: `link(Y, X, notes)`.',
+      '- rename a topic: set its `text` (its first line is its name). Change how it opens: set `display`.',
+      'get_item shows an item\'s owner and assignees, to unlink. Never: settings (`wf.*`), state keys (`resolved`…), archiving (`type` null).',
+    ].join('\n'),
+    input: {
+      ops: z
+        .array(
+          z.union([
+            z.object({ set: z.object({ entity: z.string(), key: z.string(), value: z.unknown() }) }),
+            z.object({
+              link: z.object({
+                source: z.string(),
+                destination: z.string(),
+                link_type: z.string(),
+                sort: z.union([z.literal('timestamp'), z.literal('removed'), z.object({ explicit: z.number() })]).optional(),
+              }),
+            }),
+          ]),
+        )
+        .min(1),
+    },
+    run: async (a, ctx) => {
+      const ids = await ctx.engine.write(a.ops as Op[], ctx.actor)
+      return ids.length ? JSON.stringify({ made: ids }) : 'Written.'
     },
   },
   {

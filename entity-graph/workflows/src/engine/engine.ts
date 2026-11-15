@@ -15,7 +15,8 @@ import { execCli, type Action, type ActionContext, type Author, type ItemType, t
 import { PRESETS, type Preset } from './presets'
 import { IDLE_MINUTES, MAX_SCRIPTS, plainSecrets, Settings, type Secrets } from './settings'
 export { IDLE_MINUTES, MAX_SCRIPTS } from './settings'
-import { STATE_KEYS, Store, type ItemRow, type Inspection, type Via } from './store'
+import type { Op } from 'egdb-client'
+import { ROOT, STATE_KEYS, Store, type ItemRow, type Inspection, type Via } from './store'
 import { viewText, type Size, type Who } from './views'
 import { focusKind } from '../shared/views'
 import { inferType, inferUrl } from '../shared/infer'
@@ -1340,6 +1341,76 @@ export class Engine extends EventEmitter {
     if (parentId && this.row(parentId)!.type === 'topic' && this.isClosed(parentId) && via === 'comments') throw new Error('This topic is closed.')
     const ids = this.add(parentId, this.prepare(specs, author), actor, via)
     // A script is run from inside a task's queue, so waiting for the queues to empty would wait for itself.
+    if (actor !== 'script') await this.idle()
+    return ids
+  }
+
+  /**
+   * Raw egdb ops, as the window and agents write: the one way to change items (`/egdb/write`, and the `write` tool).
+   * Each op is checked and applied through the store, so the engine and egdb stay the same:
+   * - `set` on an entity no item has, with a `type`: a new item, of that id, with the batch's other values for it, in
+   *   the item its `comments` or `notes` link in the batch comes from (else in none).
+   * - `set` on an item: its value (`open`, a param), or its `type`; never a state key (`resolved`, a bot's own state).
+   * - links: `comments`/`notes` (where it sits: added, it moves there; removed, it sits in none), `assignees`, `owns`
+   *   (one owner: a new one takes it from the last), `pins`. `sort: 'removed'` takes one off.
+   * Nothing touches settings (`wf.*`), and an item is never archived (close it). Answers the ids made.
+   */
+  async write(ops: Op[], actor = this.me()): Promise<string[]> {
+    const isSet = (o: Op): o is Extract<Op, { set: unknown }> => 'set' in o
+    const touched = (o: Op) => (isSet(o) ? [o.set.entity] : [o.link.source, o.link.destination])
+    for (const o of ops) {
+      if (touched(o).some((e) => typeof e !== 'string' || !e || e.startsWith('wf.') || e === ROOT)) throw new Error('That entity is not an item.')
+      if (isSet(o) && (STATE_KEYS.has(o.set.key) && o.set.key !== 'type' || OWN_KEYS.has(o.set.key))) throw new Error(`${o.set.key} can't be written.`)
+      if (isSet(o) && o.set.key === 'type' && o.set.value === null) throw new Error('An item is never archived: close it.')
+      if (!isSet(o) && !['comments', 'notes', 'assignees', 'owns', 'pins'].includes(o.link.link_type)) throw new Error(`No ${o.link.link_type} links.`)
+    }
+    // What the batch makes: an entity no item has, given a type here.
+    const made = new Map<string, { type: string; params: Record<string, unknown>; parent: string | null; via: Via }>()
+    for (const o of ops) if (isSet(o) && o.set.key === 'type' && !this.row(o.set.entity)) made.set(o.set.entity, { type: String(o.set.value), params: {}, parent: null, via: 'comments' })
+    const rest: Op[] = []
+    for (const o of ops) {
+      if (isSet(o) && made.has(o.set.entity)) {
+        if (o.set.key !== 'type' && o.set.value !== null) made.get(o.set.entity)!.params[o.set.key] = o.set.value
+      } else if (!isSet(o) && made.has(o.link.destination) && (o.link.link_type === 'comments' || o.link.link_type === 'notes') && o.link.sort !== 'removed') {
+        Object.assign(made.get(o.link.destination)!, { parent: o.link.source, via: o.link.link_type })
+      } else rest.push(o)
+    }
+    for (const o of rest) for (const e of touched(o)) if (!this.row(e) && !made.has(e) && !this.holder(e) && !this.itemTypes.some((t) => t.type === e)) throw new Error(`No item ${e}.`)
+    const ids: string[] = []
+    const at = () => this.now()
+    this.store.batch(() => {
+      for (const [id, m] of made) {
+        if (m.parent && !this.row(m.parent) && !made.has(m.parent)) throw new Error(`No item ${m.parent}.`)
+        ids.push(...this.addNow(m.parent, this.prepare([{ type: m.type as ItemSpec['type'], params: m.params, id }], 'human'), actor, null, m.via))
+      }
+      for (const o of rest) {
+        if (isSet(o)) {
+          const { entity: id, key, value } = o.set
+          const row = this.row(id)!
+          if (key === 'type') this.store.setType(id, String(value), actor, at())
+          else if (key === 'open') this.store.setOpen(id, value === true || value === false ? value : null, actor, at())
+          else if (JSON.stringify(row.params[key] ?? null) !== JSON.stringify(value ?? null)) {
+            const params = { ...row.params, [key]: value }
+            if (value === null) delete params[key]
+            this.store.setParams(id, params, actor, at())
+          }
+          continue
+        }
+        const { source, destination, link_type: type, sort } = o.link
+        const off = sort === 'removed'
+        if (type === 'comments' || type === 'notes') {
+          const row = this.row(destination)!
+          if (!off) this.store.move(destination, source, type, actor, at())
+          else if (row.parent_id === source) this.store.move(destination, null, type, actor, at())
+        } else if (type === 'assignees') this.setAssignee(source, off ? destination : this.resolveAssignee(destination), !off, actor)
+        else if (type === 'owns') {
+          if (!off) this.store.setOwner(destination, source, actor, at())
+          else if (this.owner(destination) === source) this.store.setOwner(destination, null, actor, at())
+        } else if (off) this.store.unpin(source, destination, actor, at())
+        else if (source !== destination) this.store.pin(source, destination, actor, at())
+      }
+    })
+    this.emit('change')
     if (actor !== 'script') await this.idle()
     return ids
   }

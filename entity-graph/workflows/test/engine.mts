@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 // The engine, the MCP server and the bots' runner, end to end, against an
 // in-memory store, and stand-in bots that call the real MCP server over HTTP
 // and return structured output.
@@ -1159,6 +1160,38 @@ assert.deepEqual(unexpected, [], 'no bot ran that no test expected')
   assert.ok(!engine.isClosed(link))
   assert.deepEqual(engine.assignees(link), ['human'])
   await engine.close(link)
+}
+
+// The raw write: egdb ops, checked and applied through the store. Closing is three of them.
+{
+  const t = randomUUID()
+  const c = randomUUID()
+  const made = await engine.write([
+    { set: { entity: t, key: 'type', value: 'topic' } },
+    { set: { entity: t, key: 'text', value: 'Raw' } },
+    { set: { entity: t, key: 'open', value: true } },
+    { set: { entity: c, key: 'type', value: 'topic' } },
+    { set: { entity: c, key: 'text', value: 'A comment' } },
+    { link: { source: t, destination: c, link_type: 'comments', sort: 'timestamp' } },
+  ])
+  assert.deepEqual(made.sort(), [t, c].sort())
+  assert.equal(engine.info(c)!.parentId, t)
+  assert.equal(engine.owner(t), engine.me(), 'what a person makes is theirs')
+  await engine.write([{ link: { source: t, destination: threepio, link_type: 'assignees' } }, { link: { source: t, destination: c, link_type: 'pins' } }])
+  assert.deepEqual([engine.assignees(t), engine.info(t)!.pins], [[engine.me(), threepio], [c]], 'a new open topic is its maker\'s too')
+  assert.deepEqual(await engine.write([{ set: { entity: t, key: 'type', value: 'topic' } }]), [], 'making it again makes nothing')
+  await engine.write([
+    { link: { source: engine.me(), destination: t, link_type: 'owns', sort: 'removed' } },
+    { link: { source: t, destination: threepio, link_type: 'assignees', sort: 'removed' } },
+    { link: { source: t, destination: engine.me(), link_type: 'assignees', sort: 'removed' } },
+    { set: { entity: t, key: 'open', value: false } },
+  ])
+  assert.ok(engine.isClosed(t))
+  assert.deepEqual([engine.owner(t), engine.assignees(t)], [null, []])
+  await assert.rejects(engine.write([{ set: { entity: t, key: 'resolved', value: true } }]), /can't be written/)
+  await assert.rejects(engine.write([{ set: { entity: 'wf.setting.x', key: 'value', value: 1 } }]), /not an item/)
+  await assert.rejects(engine.write([{ set: { entity: t, key: 'type', value: null } }]), /never archived/)
+  await assert.rejects(engine.write([{ link: { source: t, destination: c, link_type: 'contains' } }]), /No contains links/)
 }
 
 mcp.close()

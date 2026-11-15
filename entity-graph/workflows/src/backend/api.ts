@@ -30,6 +30,7 @@ export function handlers(engine: Engine, admin: Admin, me: string, source = ''):
     runNow: (itemId, given) => engine.runNow(itemId, me, given ?? {}),
     close: (id) => engine.close(id, { actor: me }),
     reopen: (id) => engine.reopen(id, me),
+    write: (ops) => engine.write(ops, me),
     addItems: (itemId, specs, via) => engine.addItems(itemId, specs, me, 'human', via ?? 'comments'),
     uploadFile: (itemId, name, base64) => engine.uploadFile(itemId, name, base64, me),
     fileData: async (itemId) => engine.fileData(itemId),

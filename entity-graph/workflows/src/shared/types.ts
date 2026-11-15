@@ -1,6 +1,8 @@
 // The shapes the main process and the renderer both read. docs/items.md is the
 // long form of what an item is.
 
+import type { Op } from 'egdb-client'
+
 /**
  * Everything is an item, items included. Every item but an item, a bot or a
  * person sits in an item or a bot (its parent), and an item may sit in another.
@@ -403,6 +405,11 @@ export interface WorkflowsAPI {
   close: (id: string) => Promise<void>
   /** Opens a closed task again. */
   reopen: (id: string) => Promise<void>
+  /**
+   * Raw egdb ops (`Engine.write`): the one write, as the `write` tool is for agents. Set values (a `type` on a new id
+   * makes an item), and add or remove `comments`, `notes`, `assignees`, `owns` and `pins` links. Answers the ids made.
+   */
+  write: (ops: Op[]) => Promise<string[]>
   /** The edit log: what was done, by whom and when, the newest first. */
   editLog: (query: LogQuery) => Promise<LogEntry[]>
   /** Adds items in a task, as the person signed in: what the chat input's default actions do. */
@@ -545,7 +552,7 @@ export interface LogEntry {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'setOpen', 'moveItem', 'newNotes', 'subtree', 'setInferredType', 'finder', 'items', 'setOwner', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'write', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'setOpen', 'moveItem', 'newNotes', 'subtree', 'setInferredType', 'finder', 'items', 'setOwner', 'editLog',
   'typeScripts', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'slackConversations', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',
