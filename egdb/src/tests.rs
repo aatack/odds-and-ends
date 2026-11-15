@@ -2036,12 +2036,25 @@ fn the_log_has_every_event_newest_first_and_filters() {
     f.write(f.main, "alex", vec![Op::set("m", "text", "other"), Op::set("n", "text", Value::Null)]);
     f.write(f.main, "alex", vec![Op::link("n", "c", "child", SortOrder::Explicit(1.0))]);
     f.write(f.main, "bot", vec![Op::unlink("n", "c", "child")]);
+    let log = |f: &Fixture, filter: LogFilter| f.store.log(f.main, &filter).unwrap();
+    let values = |l: &Log| -> Vec<(String, String, Value, String)> {
+        l.events
+            .iter()
+            .filter_map(|c| match c {
+                Change::Value(c) => Some((c.entity.clone(), c.key.clone(), c.value.clone(), c.event.author.clone())),
+                Change::Link(_) => None,
+            })
+            .collect()
+    };
 
-    let all = f.store.value_log(f.main, &LogFilter::default()).unwrap();
-    let seen: Vec<(String, String, Value, String)> =
-        all.iter().map(|c| (c.entity.clone(), c.key.clone(), c.value.clone(), c.event.author.clone())).collect();
+    let all = log(&f, LogFilter::default());
+    assert_eq!(all.events.len(), 7);
+    assert_eq!(all.head, f.store.branch(f.main).unwrap().head);
+    assert!(!all.reset);
+    // Newest first, values and links together.
+    assert!(matches!(&all.events[0], Change::Link(l) if l.sort.is_none() && l.event.author == "bot"));
     assert_eq!(
-        seen,
+        values(&log(&f, LogFilter { kind: Some(LogKind::Values), ..Default::default() })),
         vec![
             ("n".into(), "text".into(), Value::Null, "alex".into()),
             ("m".into(), "text".into(), Value::Text("other".into()), "alex".into()),
@@ -2051,19 +2064,66 @@ fn the_log_has_every_event_newest_first_and_filters() {
         ]
     );
 
-    let by_bot = f.store.value_log(f.main, &LogFilter { authors: Some(vec!["bot".into()]), ..Default::default() }).unwrap();
-    assert_eq!(by_bot.iter().map(|c| c.value.clone()).collect::<Vec<_>>(), vec![Value::Text("two".into())]);
+    let by_bot = log(&f, LogFilter { authors: Some(vec!["bot".into()]), kind: Some(LogKind::Values), ..Default::default() });
+    assert_eq!(values(&by_bot).into_iter().map(|c| c.2).collect::<Vec<_>>(), vec![Value::Text("two".into())]);
     let n_text = LogFilter { entities: Some(vec!["n".into()]), keys: Some(vec!["text".into()]), limit: Some(2), ..Default::default() };
-    assert_eq!(f.store.value_log(f.main, &n_text).unwrap().len(), 2);
-    let later = LogFilter { since: Some(T0 + 3), ..Default::default() };
-    assert_eq!(f.store.value_log(f.main, &later).unwrap().len(), 2);
+    assert_eq!(log(&f, n_text).events.len(), 2);
+    let later = LogFilter { since: Some(T0 + 3), kind: Some(LogKind::Values), ..Default::default() };
+    assert_eq!(log(&f, later).events.len(), 2);
     let nobody = LogFilter { entities: Some(vec!["nothing".into()]), ..Default::default() };
-    assert!(f.store.value_log(f.main, &nobody).unwrap().is_empty());
+    assert!(log(&f, nobody).events.is_empty());
 
     // Links: either end matches an entity; a removal has no sort.
-    let links = f.store.link_log(f.main, &LogFilter { entities: Some(vec!["c".into()]), ..Default::default() }).unwrap();
-    assert_eq!(
-        links.iter().map(|l| (l.source.as_str(), l.destination.as_str(), l.sort, l.event.author.as_str())).collect::<Vec<_>>(),
-        vec![("n", "c", None, "bot"), ("n", "c", Some(1.0), "alex")]
-    );
+    let links = log(&f, LogFilter { entities: Some(vec!["c".into()]), ..Default::default() });
+    let seen: Vec<_> = links
+        .events
+        .iter()
+        .map(|c| match c {
+            Change::Link(l) => (l.source.as_str(), l.destination.as_str(), l.sort, l.event.author.as_str()),
+            Change::Value(_) => panic!("c has no values"),
+        })
+        .collect();
+    assert_eq!(seen, vec![("n", "c", None, "bot"), ("n", "c", Some(1.0), "alex")]);
+
+    // Removed: clears and unlinks only.
+    let removed = log(&f, LogFilter { removed: true, ..Default::default() });
+    assert_eq!(removed.events.len(), 2);
+    assert!(matches!(&removed.events[1], Change::Value(v) if v.value == Value::Null));
+}
+
+#[test]
+fn the_log_after_a_cursor_is_the_feed() {
+    let mut f = Fixture::new();
+    f.write(f.main, "alex", vec![Op::set("n", "text", "one")]);
+    let cursor = f.store.log(f.main, &LogFilter::default()).unwrap().head;
+    let after = |f: &Fixture, after: Seq, limit: Option<usize>| {
+        f.store.log(f.main, &LogFilter { after: Some(after), limit, ..Default::default() }).unwrap()
+    };
+    // Nothing yet: empty, and the head stays.
+    let none = after(&f, cursor, None);
+    assert!(none.events.is_empty() && none.head == cursor && !none.reset);
+
+    f.write(f.main, "bot", vec![Op::set("n", "text", "two"), Op::link("n", "c", "child", SortOrder::Explicit(1.0))]);
+    f.write(f.main, "alex", vec![Op::set("m", "text", "three")]);
+    // Oldest first, values and links together.
+    let all = after(&f, cursor, None);
+    let seqs: Vec<Seq> = all.events.iter().map(|c| c.event().seq).collect();
+    assert_eq!(all.events.len(), 3);
+    assert!(seqs.windows(2).all(|w| w[0] <= w[1]));
+    assert_eq!(all.head, f.store.branch(f.main).unwrap().head);
+
+    // Cut short by limit: the head is the last event's, so the next read skips nothing.
+    let first = after(&f, cursor, Some(1));
+    assert_eq!(first.events.len(), 1);
+    assert_eq!(first.head, first.events[0].event().seq);
+    let rest = after(&f, first.head, None);
+    assert_eq!(rest.events.len() + 1, all.events.len());
+
+    // A filter that matches nothing still moves the cursor on.
+    let other = f.store.log(f.main, &LogFilter { after: Some(cursor), authors: Some(vec!["nobody".into()]), ..Default::default() }).unwrap();
+    assert!(other.events.is_empty());
+    assert_eq!(other.head, all.head);
+
+    // A cursor past the head is from elsewhere: reset.
+    assert!(after(&f, all.head + 100, None).reset);
 }

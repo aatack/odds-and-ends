@@ -26,7 +26,7 @@ use tokio::net::TcpListener;
 use crate::error::Result;
 use crate::store::Store;
 use crate::types::{BranchId, Direction, ParentRef, SeqRange, WriteBatch};
-use crate::{Filter, FindOptions, Follow, LogFilter, ProveOptions, WalkOptions};
+use crate::{Change, Filter, FindOptions, Follow, LogFilter, LogKind, ProveOptions, WalkOptions};
 use dto::query::{
     node_predicate, FilterDto, FindDto, FindOptionsDto, FollowDto, ProveDto, ProveOptionsDto,
     WalkDto, WalkOptionsDto,
@@ -53,6 +53,14 @@ pub struct Config {
 struct AppState {
     store: SharedStore,
     token: Option<String>,
+    /// Bumped after every call that may add events: `/log` held open (`wait`) wakes on it.
+    written: Arc<tokio::sync::watch::Sender<u64>>,
+}
+
+impl AppState {
+    fn wrote(&self) {
+        self.written.send_modify(|n| *n += 1);
+    }
 }
 
 /// Build the router for a store. The store is wrapped in an `Arc<Mutex<..>>`.
@@ -66,6 +74,7 @@ pub fn router_with(store: SharedStore, config: Config) -> Router {
     let state = AppState {
         store,
         token: config.token,
+        written: Arc::new(tokio::sync::watch::channel(0).0),
     };
     let protected = Router::new()
         .route("/write", post(write))
@@ -74,8 +83,7 @@ pub fn router_with(store: SharedStore, config: Config) -> Router {
         .route("/undo", post(undo))
         .route("/values", post(values))
         .route("/value_events", post(value_events))
-        .route("/value_log", post(value_log))
-        .route("/link_log", post(link_log))
+        .route("/log", post(log))
         .route("/value", post(value))
         .route("/links", post(links))
         .route("/links_including_archived", post(links_including_archived))
@@ -179,6 +187,7 @@ async fn write(
 ) -> ApiResult<WriteResultDto> {
     let batch: WriteBatch = body.try_into()?;
     let result = on_store(&state, move |s| s.write(batch)).await?;
+    state.wrote();
     Ok(Json(result.into()))
 }
 
@@ -196,6 +205,7 @@ async fn archive_entity(
     let id = parse_branch(&body.branch)?;
     let (author, entity) = (body.author, body.entity);
     let result = on_store(&state, move |s| s.archive_entity(id, &author, &entity)).await?;
+    state.wrote();
     Ok(Json(result.into()))
 }
 
@@ -214,6 +224,7 @@ async fn restore_entity(
     let id = parse_branch(&body.branch)?;
     let (author, entity, ty) = (body.author, body.entity, body.entity_type);
     let result = on_store(&state, move |s| s.restore_entity(id, &author, &entity, &ty)).await?;
+    state.wrote();
     Ok(Json(result.into()))
 }
 
@@ -230,10 +241,11 @@ async fn undo(
     let id = parse_branch(&body.branch)?;
     let author = body.author;
     let outcome = on_store(&state, move |s| s.undo(id, &author)).await?;
+    state.wrote();
     Ok(Json(outcome.map(UndoOutcomeDto::from)))
 }
 
-// --- the edit log -----------------------------------------------------------
+// --- the log ---------------------------------------------------------------
 
 #[derive(Deserialize)]
 struct LogReq {
@@ -244,11 +256,28 @@ struct LogReq {
     since: Option<i64>,
     until: Option<i64>,
     limit: Option<usize>,
+    /// `"values"` or `"links"`; both when left out.
+    kind: Option<String>,
+    #[serde(default)]
+    removed: bool,
+    after: Option<i64>,
+    /// With `after`: when nothing is after it, hold the request this many
+    /// milliseconds (at most a minute) for a write to land.
+    wait: Option<u64>,
 }
 
 impl LogReq {
-    fn filter(self) -> std::result::Result<(BranchId, LogFilter), ApiError> {
+    fn filter(self) -> std::result::Result<(BranchId, LogFilter, u64), ApiError> {
         let id = parse_branch(&self.branch)?;
+        let kind = match self.kind.as_deref() {
+            None => None,
+            Some("values") => Some(LogKind::Values),
+            Some("links") => Some(LogKind::Links),
+            Some(other) => {
+                return Err(ApiError(StatusCode::BAD_REQUEST, "invalid", format!("kind is values or links, not {other}")))
+            }
+        };
+        let wait = if self.after.is_some() { self.wait.unwrap_or(0).min(60_000) } else { 0 };
         let filter = LogFilter {
             entities: self.entities,
             authors: self.authors,
@@ -256,31 +285,43 @@ impl LogReq {
             since: self.since,
             until: self.until,
             limit: self.limit,
+            kind,
+            removed: self.removed,
+            after: self.after,
         };
-        Ok((id, filter))
+        Ok((id, filter, wait))
     }
 }
 
-async fn value_log(State(state): State<AppState>, ApiJson(body): ApiJson<LogReq>) -> ApiResult<serde_json::Value> {
-    let (id, filter) = body.filter()?;
-    let log = on_store(&state, move |s| s.value_log(id, &filter)).await?;
-    Ok(Json(serde_json::Value::Array(
-        log.into_iter()
-            .map(|c| json!({ "entity": c.entity, "key": c.key, "value": value_to_json(&c.value), "event": EventRefDto::from(c.event) }))
-            .collect(),
-    )))
-}
-
-async fn link_log(State(state): State<AppState>, ApiJson(body): ApiJson<LogReq>) -> ApiResult<serde_json::Value> {
-    let (id, filter) = body.filter()?;
-    let log = on_store(&state, move |s| s.link_log(id, &filter)).await?;
-    Ok(Json(serde_json::Value::Array(
-        log.into_iter()
-            .map(|c| {
-                json!({ "source": c.source, "destination": c.destination, "link_type": c.link_type, "sort": c.sort, "event": EventRefDto::from(c.event) })
-            })
-            .collect(),
-    )))
+/// The log: `{ events, head, reset }`. Each event is `{ kind: "value", entity,
+/// key, value, event }` or `{ kind: "link", source, destination, link_type,
+/// sort, event }`. With `after` and `wait`, an empty answer waits for writes.
+async fn log(State(state): State<AppState>, ApiJson(body): ApiJson<LogReq>) -> ApiResult<serde_json::Value> {
+    let (id, filter, wait) = body.filter()?;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(wait);
+    let mut written = state.written.subscribe();
+    let log = loop {
+        written.mark_unchanged();
+        let f = filter.clone();
+        let log = on_store(&state, move |s| s.log(id, &f)).await?;
+        if !log.events.is_empty() || log.reset || tokio::time::Instant::now() >= deadline {
+            break log;
+        }
+        // Nothing yet: wait for a write (one since the read above counts), or the deadline.
+        match tokio::time::timeout_at(deadline, written.changed()).await {
+            Ok(Ok(())) => continue,
+            _ => break log,
+        }
+    };
+    let events: Vec<serde_json::Value> = log
+        .events
+        .into_iter()
+        .map(|c| match c {
+            Change::Value(c) => json!({ "kind": "value", "entity": c.entity, "key": c.key, "value": value_to_json(&c.value), "event": EventRefDto::from(c.event) }),
+            Change::Link(c) => json!({ "kind": "link", "source": c.source, "destination": c.destination, "link_type": c.link_type, "sort": c.sort, "event": EventRefDto::from(c.event) }),
+        })
+        .collect();
+    Ok(Json(json!({ "events": events, "head": log.head, "reset": log.reset })))
 }
 
 // --- value and link reads -------------------------------------------------
@@ -642,6 +683,7 @@ async fn pull(
     let from = parse_branch(&body.from)?;
     let range: SeqRange = body.range.into();
     on_store(&state, move |s| s.pull(into, from, range)).await?;
+    state.wrote();
     Ok(Json(json!({})))
 }
 
@@ -658,6 +700,7 @@ async fn merge(
     let into = parse_branch(&body.into)?;
     let from = parse_branch(&body.from)?;
     on_store(&state, move |s| s.merge(into, from)).await?;
+    state.wrote();
     Ok(Json(json!({})))
 }
 
@@ -679,6 +722,7 @@ async fn set_parents(
         .map(ParentRef::try_from)
         .collect::<Result<_>>()?;
     on_store(&state, move |s| s.set_parents(id, &parents)).await?;
+    state.wrote();
     Ok(Json(json!({})))
 }
 

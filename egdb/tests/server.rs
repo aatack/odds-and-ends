@@ -177,13 +177,18 @@ async fn write_and_reads() {
     assert!(events["a"]["title"]["author"].is_string());
     assert_eq!(events["nobody"], json!({}));
 
-    // value_log and link_log: every event, the newest first, filtered
-    let log = post_ok(&s.base, "/value_log", json!({ "branch": b, "entities": ["a"], "keys": ["title"] })).await;
-    assert_eq!(log[0]["entity"], "a");
-    assert_eq!(log[0]["value"], "alpha");
-    assert!(log[0]["event"]["author"].is_string());
-    let none = post_ok(&s.base, "/link_log", json!({ "branch": b, "authors": ["nobody"] })).await;
-    assert_eq!(none, json!([]));
+    // log: every event, the newest first, filtered
+    let log = post_ok(&s.base, "/log", json!({ "branch": b, "entities": ["a"], "keys": ["title"] })).await;
+    let events = log["events"].as_array().unwrap();
+    assert_eq!(events[0]["kind"], "value");
+    assert_eq!(events[0]["entity"], "a");
+    assert_eq!(events[0]["value"], "alpha");
+    assert!(events[0]["event"]["author"].is_string());
+    assert!(log["head"].as_i64().unwrap() > 0);
+    assert_eq!(log["reset"], false);
+    let none = post_ok(&s.base, "/log", json!({ "branch": b, "kind": "links", "authors": ["nobody"] })).await;
+    assert_eq!(none["events"], json!([]));
+    assert_eq!(post(&s.base, "/log", json!({ "branch": b, "kind": "nope" })).await.status(), 400);
 
     // value
     let one = post_ok(
@@ -909,4 +914,31 @@ async fn value_round_trip() {
     assert_eq!(get_v("str").await, json!("hi"));
     assert_eq!(get_v("arr").await, json!([1, 2, 3]));
     assert_eq!(get_v("obj").await, json!({ "k": "v" }));
+}
+
+#[tokio::test]
+async fn log_after_waits_for_a_write() {
+    let s = plain().await;
+    let b = make_branch(&s.base).await;
+    let head = post_ok(&s.base, "/log", json!({ "branch": b })).await["head"].clone();
+    let head = head.as_i64().unwrap();
+    // Nothing after the head: the wait runs out, and the head stays.
+    let started = std::time::Instant::now();
+    let idle = post_ok(&s.base, "/log", json!({ "branch": b, "after": head, "wait": 200 })).await;
+    assert!(started.elapsed() >= std::time::Duration::from_millis(190));
+    assert_eq!(idle["events"], json!([]));
+    assert_eq!(idle["head"], head);
+    // A write while it waits answers it at once.
+    let (base, branch) = (s.base.clone(), b.clone());
+    let waiting = tokio::spawn(async move { post_ok(&base, "/log", json!({ "branch": branch, "after": head, "wait": 10_000 })).await });
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let started = std::time::Instant::now();
+    post_ok(&s.base, "/write", json!({ "branch": b, "author": "alex", "ops": [{ "set": { "entity": "x", "key": "title", "value": "new" } }] })).await;
+    let got = waiting.await.unwrap();
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    assert_eq!(got["events"][0]["entity"], "x");
+    assert!(got["head"].as_i64().unwrap() > head);
+    // A cursor from elsewhere: reset.
+    let reset = post_ok(&s.base, "/log", json!({ "branch": b, "after": head + 1000 })).await;
+    assert_eq!(reset["reset"], true);
 }

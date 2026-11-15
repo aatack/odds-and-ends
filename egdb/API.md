@@ -203,18 +203,37 @@ it to find when, and by whom, a value got its current state.
 { "a": { "type": { "branch": "...", "seq": 3, "timestamp": 1700000000000, "author": "u" } } }
 ```
 
-### POST /value_log, /link_log
+### POST /log
 
-The edit log. Request: `{branch, entities?, authors?, keys?, since?, until?, limit?}`;
-each filter left out keeps everything (`keys` are value keys for `/value_log`,
-link types for `/link_log`; a link matches an entity at either end; `since` is
-inclusive, `until` exclusive, both in ms). Response: every event the branch sees
-that the filter keeps, current and superseded alike, the newest first; `limit`
-keeps the newest. A cleared value is `null`; a removed link has `sort: null`.
+The log, and the change feed. Request:
+`{branch, entities?, authors?, keys?, since?, until?, limit?, kind?, removed?, after?, wait?}`;
+each filter left out keeps everything. `keys` are value keys and link types; a
+link matches an entity at either end; `since` is inclusive, `until` exclusive,
+both in ms. `kind` is `"values"` or `"links"` (both when left out); `removed:
+true` keeps only clears and link removals.
+
+Response: `{events, head, reset}`. `events` are every event the branch sees that
+the filter keeps, current and superseded alike, values and links together, the
+newest first; `limit` keeps the newest. A value event is
+`{kind: "value", entity, key, value, event}` (a clear is `value: null`); a link
+event is `{kind: "link", source, destination, link_type, sort, event}` (a removal
+is `sort: null`). `head` is the branch's head seq.
+
+**The feed.** With `after: <seq>`, only the branch's own events after that seq
+are kept, oldest first (events it sees through its parents are left out), and
+`limit` keeps the oldest. `head` is the seq to pass as `after` next time: the
+last event's when `limit` cut the answer short, else the branch's head (so a
+filter that matches nothing still moves a cursor on). With `wait: <ms>` (at most
+60000) and nothing to answer, the request is held until a write through this
+server lands, or the wait runs out. `reset: true` says the cursor is past the
+head: it came from another store, so a client must read what it holds again.
 
 ```json
-[{ "entity": "a", "key": "title", "value": "alpha", "event": { "branch": "...", "seq": 3, "timestamp": 1700000000000, "author": "u" } }]
-[{ "source": "a", "destination": "b", "link_type": "child", "sort": null, "event": { "branch": "...", "seq": 4, "timestamp": 1700000000001, "author": "u" } }]
+{ "events": [
+    { "kind": "value", "entity": "a", "key": "title", "value": "alpha", "event": { "branch": "...", "seq": 3, "timestamp": 1700000000000, "author": "u" } },
+    { "kind": "link", "source": "a", "destination": "b", "link_type": "child", "sort": null, "event": { "branch": "...", "seq": 4, "timestamp": 1700000000001, "author": "u" } }
+  ],
+  "head": 4, "reset": false }
 ```
 
 ### POST /value
