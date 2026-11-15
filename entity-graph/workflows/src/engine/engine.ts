@@ -347,12 +347,16 @@ export class Engine extends EventEmitter {
     const items = (ids: string[]) => ids.flatMap((id) => this.get(id, viewer) ?? [])
     const pinned = [...new Set(who.flatMap((w) => this.store.pins(w).map((p) => p.id)))]
     if (!who.length) return { pinned: [], unassigned: [] }
-    const log = await this.store.log({ entities: who, keys: ['assignees'], limit: 1000 })
+    // Every item taken off them, the latest taken off first, each once, whether or not it is theirs again since. Not a
+    // topic an older build closed (`open: false` outside a tree of notes): its leftover assignees were taken off it all
+    // at once, by `disownComments`, which is no news.
+    const log = await this.store.log({ entities: who, keys: ['assignees'], limit: 5000 })
     const ids: string[] = []
     for (const e of log) {
       if (ids.length >= limit) break
       if (e.kind !== 'link' || !e.removed || !e.other || !who.includes(e.other) || ids.includes(e.entity)) continue
-      if (this.row(e.entity) && !this.assignees(e.entity).some((a) => who.includes(a))) ids.push(e.entity)
+      const r = this.row(e.entity)
+      if (r && !(r.type === 'topic' && r.params.open === false && r.via !== 'notes')) ids.push(e.entity)
     }
     return { pinned: items(pinned), unassigned: items(ids) }
   }

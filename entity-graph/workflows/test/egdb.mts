@@ -64,12 +64,16 @@ const file = join(dir, 'round-trip.egdb')
   const hi = engine.detail(id)!.children.find((e) => e.params.text === 'Hi.')!.id
   await engine.setValue(hi, 'colour', 'red', 'alex')
   await engine.setValue(hi, 'colour', 'blue', `bot:${bot}`)
-  // Recently unassigned: what was assigned to someone and no longer is, the latest first, from egdb's history.
+  // Recently unassigned: what was taken off someone, the latest first, from egdb's history, even if theirs again since.
   const was = (await engine.create('Was yours', { actor: 'alex' }))!
   await engine.assign(was, 'alex', false, 'alex')
+  const back = (await engine.create('Yours again', { actor: 'alex' }))!
+  await engine.assign(back, 'alex', false, 'alex')
+  await engine.assign(back, 'alex', true, 'alex')
   const still = (await engine.create('Still yours', { actor: 'alex' }))!
-  assert.ok((await engine.finder(['alex'])).unassigned.some((i) => i.id === was))
-  assert.ok(!(await engine.finder(['alex'])).unassigned.some((i) => i.id === still), 'not what is still assigned')
+  const unassigned = (await engine.finder(['alex'])).unassigned.map((i) => i.id)
+  assert.deepEqual(unassigned.slice(0, 2), [back, was], 'the latest taken off first, even if given back since')
+  assert.ok(!unassigned.includes(still), 'not what was never taken off')
   engine.settings.set('mcp.port', 1234)
   const done = (await engine.create('Done'))!
   await engine.close(done)
