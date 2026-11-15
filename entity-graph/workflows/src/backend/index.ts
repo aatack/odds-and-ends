@@ -50,7 +50,10 @@ async function main(): Promise<void> {
   const token = randomBytes(24).toString('base64url')
   const blocking = (type: string) => Boolean(ITEM_TYPES.find((t) => t.type === type)?.blocking)
   const egdbToken = randomBytes(24).toString('base64url')
-  const { store, sink, egdb, client } = await openStore(file, egdbToken, blocking, (m) => log(m))
+  // Items of a type since removed (the old approvals) are left out: the engine can't read them, so a script holding one
+  // failed on every run.
+  const known = (type: string) => ITEM_TYPES.some((t) => t.type === type)
+  const { store, sink, egdb, client } = await openStore(file, egdbToken, blocking, (m) => log(m), known)
   // For the window's `/egdb/*` (egdbProxy.ts): egdb-server and the store's branch, never handed out.
   const egdbTarget = { url: egdb.url, token: egdbToken, branch: await storeBranch(client) }
   const engine = new Engine({ store, dataDir: dir, secrets: keyFileSecrets(dir) })
