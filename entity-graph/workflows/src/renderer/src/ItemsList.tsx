@@ -1,7 +1,7 @@
 import fuzzysort from 'fuzzysort'
 import { useAtomValue } from 'jotai'
 import { Bot, Check, Plus, Search, User } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { Item } from '../../shared/types'
 import { Elapsed } from './time'
 import { useItemMenu } from './ItemMenu'
@@ -9,6 +9,8 @@ import { ItemPicker } from './ItemPicker'
 import { ItemIcon, waitingOn } from './icons'
 import { FINDER_SECTIONS, SECTIONS, type Recent, type SectionId } from './sections'
 import { api } from './useWorkflows'
+import { everyone } from './people'
+import { OverviewContext } from './status'
 import { Marked } from './components/ui/Marked'
 import { searchFocusAtom, viewsAtom } from './views'
 
@@ -26,12 +28,14 @@ function detail(i: Item): string {
 }
 
 /** A line of the finder: an item in a section, a bot, or the "n more" a section ends with when it has more than it shows. */
-/** A bot or person a finder offers: `status` is what its row says (by default, Assign). */
+/** A bot or person a finder offers: `status` is what its row says (by default, the finder's verb). */
 type Someone = { id: string; name: string; bot?: boolean; status?: string }
 
 type Line = { key: string; item: Item; chosen?: boolean } | { key: string; bot: Someone; chosen?: boolean } | { key: string; more: string; n: number }
 
 type Act = (fn: () => Promise<unknown>) => Promise<void>
+/** How the app does what it does: given by the app, so every finder (a picker too) has the link sections' +. */
+export const ActContext = createContext<Act | null>(null)
 /** The sections that show a link from whoever the finder is for, and so can be added to (its + opens the picker). */
 const ADDABLE: Partial<Record<SectionId, { verb: string; title: string }>> = {
   assigned: { verb: 'Assign', title: 'Assign something' },
@@ -48,8 +52,10 @@ const ADDABLE: Partial<Record<SectionId, { verb: string; title: string }>> = {
  * shows the rest; an item shows in every section that has it. Typing filters the titles fuzzily; the arrow keys
  * move through what is left, Enter opens one (or shows a section's rest), and Tab makes a new item with what was typed
  * as its title (`onTab`; a picker has none). A picker picks rather than opens: `verb` says which. With `selected`,
- * what is selected comes first, ticked (a multiselect: picking a row toggles it). Given `act`, the link sections show
- * even when empty, each with a + that picks something to link. Escape with nothing typed calls `onEscape`.
+ * what is selected comes first, ticked (a multiselect: picking a row toggles it). The link sections show even when
+ * empty, each with a + that picks something to link. People and bots come last, in a section of their own, cut like
+ * the rest. Escape with nothing typed calls `onEscape`. Every finder is this, and behaves the same: only what choosing
+ * a row does differs.
  */
 export function ItemsList(props: {
   items: Item[]
@@ -62,20 +68,25 @@ export function ItemsList(props: {
   /** Tab: with what is typed (perhaps nothing). Left out, Tab does nothing: a finder for looking things up, not starting them. */
   onTab?: (text: string) => void
   verb?: string
-  /** Bots and people to offer too, first, in a section of their own (`@` in the chat input). */
+  /** The people and bots it offers, last, in a section of their own. Left out, everyone (you named as you). */
   bots?: Someone[]
-  /** Given, the bots' section is called this and comes after the others (the Tasks view's Bots). */
-  botsLabel?: string
   /** For a multiselect: the ids selected, shown first. */
   selected?: string[]
   /** Escape with nothing typed. */
   onEscape?: () => void
-  /** Given, the link sections have a + (assign, own, pin something), done through this. */
+  /** How the link sections' + (assign, own, pin something) is done. Left out, the app's. */
   act?: Act
   /** On a phone: buttons rather than keys (a New button for Tab), rows of two lines, and the search line focused only when asked (it raises the keyboard). */
   mobile?: boolean
 }) {
-  const { items, recent: given, sections = FINDER_SECTIONS, perSection = 12, onOpen, onTab, verb = 'Open', bots = [], botsLabel, selected, onEscape, act, mobile = false } = props
+  const { items, recent: given, sections = FINDER_SECTIONS, perSection = 12, onOpen, onTab, verb = 'Open', selected, onEscape, mobile = false } = props
+  const overview = useContext(OverviewContext)
+  const appAct = useContext(ActContext)
+  const act = props.act ?? appAct ?? undefined
+  const bots = useMemo(
+    () => props.bots ?? (overview ? everyone(overview).map((p) => ({ ...p, name: p.id === overview.me.id ? `${p.name} (you)` : p.name })) : []),
+    [props.bots, overview],
+  )
   const [text, setText] = useState('')
   const [at, setAt] = useState(0)
   const [expanded, setExpanded] = useState<string[]>([])
@@ -145,13 +156,11 @@ export function ItemsList(props: {
     ]
     const chosenGroup = chosenLines.length ? [{ id: 'selected', label: 'Selected', count: chosenLines.length, lines: chosenLines, add: false }] : []
     const others = bots.filter((b) => !chosen.has(b.id))
-    const botLines: Line[] = (text.trim() ? fuzzysort.go(text, others, { key: 'name', threshold: 0.2 }).map((r) => r.obj) : others).map((bot) => ({
-      key: `bot:${bot.id}`,
-      bot,
-    }))
-    const botGroup = botLines.length
-      ? [{ id: 'bots', label: botsLabel ?? (selected ? 'Others' : 'People and bots'), count: botLines.length, lines: botLines, add: false }]
-      : []
+    const allBots = text.trim() ? fuzzysort.go(text, others, { key: 'name', threshold: 0.2 }).map((r) => r.obj) : others
+    const shownBots = expanded.includes('bots') ? allBots : allBots.slice(0, perSection)
+    const botLines: Line[] = shownBots.map((bot) => ({ key: `bot:${bot.id}`, bot }))
+    if (shownBots.length < allBots.length) botLines.push({ key: 'bots:more', more: 'bots', n: allBots.length - shownBots.length })
+    const botGroup = allBots.length ? [{ id: 'bots', label: 'People and bots', count: allBots.length, lines: botLines, add: false }] : []
     const itemGroups = sections
       .map((id) => {
         // An item shows in every section that has it (pinned to you and assigned to you, say). Everything else is only
@@ -167,8 +176,8 @@ export function ItemsList(props: {
       })
       // A link section that can be added to shows even when empty, but not while something is typed.
       .filter((g) => g.count || (g.add && !matched))
-    return botsLabel ? [...chosenGroup, ...itemGroups, ...botGroup] : [...chosenGroup, ...botGroup, ...itemGroups]
-  }, [items, recent, history, extra, sections, perSection, expanded, text, bots, botsLabel, selected, act])
+    return [...chosenGroup, ...itemGroups, ...botGroup]
+  }, [items, recent, history, extra, sections, perSection, expanded, text, bots, selected, act])
   const flat = groups.flatMap((g) => g.lines)
   const current = Math.min(at, Math.max(flat.length - 1, 0))
   const choose = (line: Line) => ('item' in line ? onOpen(line.item.id) : 'bot' in line ? onOpen(line.bot.id) : setExpanded([...expanded, line.more]))
@@ -265,7 +274,7 @@ export function ItemsList(props: {
                 <div key={line.key} className={`row ${selected}`} onClick={() => choose(line)} onMouseMove={hover}>
                   {line.chosen ? <Check className="icon" /> : line.bot.bot === false ? <User className="icon" /> : <Bot className="icon" />}
                   <span className="row-title"><Marked text={line.bot.name} phrase={text} /></span>
-                  <span className="muted row-status">{line.chosen ? 'Remove' : (line.bot.status ?? 'Assign')}</span>
+                  <span className="muted row-status">{line.chosen ? 'Remove' : (line.bot.status ?? verb)}</span>
                 </div>
               )
             if (!('item' in line))
@@ -294,6 +303,7 @@ export function ItemsList(props: {
           verb={ADDABLE[adding]!.verb}
           items={items.filter((i) => !SECTIONS[adding].items(items, recent).some((h) => h.id === i.id) && !who.includes(i.id))}
           recent={given}
+          bots={bots.filter((b) => !who.includes(b.id))}
           onPick={add}
           onClose={() => setAdding(null)}
         />

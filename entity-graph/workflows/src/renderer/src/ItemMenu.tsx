@@ -270,7 +270,7 @@ function LinkPicker({ kind, id, overview, recent, actOn, onClose }: { kind: Link
       sections={kind === 'pin' ? undefined : []}
       recent={recent}
       verb={kind === 'pin' ? 'Pin' : 'Assign'}
-      bots={kind === 'pin' ? [] : people}
+      bots={people}
       multiple
       value={value}
       setValue={(next) => {

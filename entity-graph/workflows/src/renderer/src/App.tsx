@@ -16,7 +16,7 @@ import { Pins } from './Pins'
 import { ItemMenu } from './ItemMenu'
 import { ItemInfoView } from './ItemInfoView'
 import { ItemPicker } from './ItemPicker'
-import { ItemsList } from './ItemsList'
+import { ActContext, ItemsList } from './ItemsList'
 import { Composer } from './Composer'
 import { ItemRefContext, Markdown } from './components/ui/Markdown'
 import { GuideDoc } from './GuideDoc'
@@ -174,6 +174,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
   return (
     <ItemsContext.Provider value={items}>
       <OverviewContext.Provider value={items.overview}>
+      <ActContext.Provider value={items.act}>
       <ItemRefContext.Provider value={itemRef}>
         {/* On a desktop: the pages on the left, the view in the middle, the item's people, actions and pins on the right. */}
         <div className={`app ${mobile ? 'mobile' : ''}`}>
@@ -184,6 +185,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
         <ItemMenu actOn={items.actOn} overview={items.overview} recent={items.recent} />
         <Preview />
       </ItemRefContext.Provider>
+      </ActContext.Provider>
       </OverviewContext.Provider>
     </ItemsContext.Provider>
   )
