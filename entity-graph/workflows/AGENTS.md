@@ -78,11 +78,21 @@ window: there `window.workflows` is the preload's, as always.
   signing in.
 - **The window's egdb** (`renderer/src/egdb.ts`, moving in screen by screen): egdb-client's `Egdb`, one per App, its
   requests sent as the app's `egdb(route, body)` call (IPC or `/rpc`, so the same on both listeners) to
-  `egdbProxy.ts`: reads on the store's branch without settings, and `write` (the engine's, answered once egdb has it,
-  so egdb-client's read-back sees it). It follows the change feed (`/log` held open) while the App is open, so what
+  `egdbProxy.ts`: reads on the store's branch without settings, `write` (the engine's `writeLanding`, answered once
+  egdb has it, so egdb-client's read-back sees it, with the seqs of the one batch it landed as), and `undo` (the
+  engine's, as the person, naming that batch's first seq). It follows the change feed (`/log` held open) while the App is open, so what
   bots and the other device write shows with no refetch. The notes tree (`notes/store.ts`) reads and writes through
   it (`useEntityView`, ops through `Egdb.write`); a note made by a write is bare (nobody owns it or has it). The
   screenshot script runs on an egdb-server of its own (a temp file) so these screens have data.
+- **Undo and redo** (Ctrl+Z, and Ctrl+Shift+Z or Ctrl+Y, outside a text box: `useUndoKeys` in `App.tsx`) are
+  egdb-client's: the window keeps its own stack of the changes it wrote through its egdb (the notes tree, so far; the
+  outbox's calls are not on it), with what each replaced, so an undo shows at once and a redo is a write again. Behind,
+  egdb takes the change's events off (only the person's own, from the last five minutes, and only their newest: a
+  change made since, any way, refuses it, and the refusal shows as an error with the change drawn again). The sink
+  keeps the ops of each batch it wrote lately (`EgdbSink.undo`), so the engine reads back exactly the entities it
+  touched and puts them back in memory as egdb now has them (`Store.reload`: rows, where they sit, pins, assignees,
+  owners; an item whose `type` went is gone, and what sat in it sits in none). Only a change this backend wrote can be
+  undone: after a restart, the window's stack is gone anyway.
 - **What is shown is cached** (`state/cache.ts`, in the app's window too): the overview and each item's detail, as
   the backend last said them. A view draws what is there at once (an item not fetched yet, from what the overview
   says of it: `ItemInfoDetail.loading`, its chat saying Loading…), and the backend is asked in the background: both

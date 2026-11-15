@@ -293,15 +293,16 @@ const file = join(dir, 'round-trip.egdb')
   const raw = '7f1c8a52-1111-4b6e-9a0a-000000000001'
   const wrote = await egdb('write', { ops: [{ set: { entity: raw, key: 'type', value: 'topic' } }, { set: { entity: raw, key: 'text', value: 'Raw' } }, { link: { source: id, destination: raw, link_type: 'comments', sort: 'timestamp' } }] })
   assert.deepEqual(wrote.result?.made, [raw])
-  // As egdb's own write answers (egdb-client reads it), with no seqs to undo: the engine wrote it in its own batches.
-  assert.ok(Number(wrote.result?.first_seq) > Number(wrote.result?.last_seq))
+  // As egdb's own write answers (egdb-client reads it), with the seqs of the one batch it landed as: what an undo names.
+  assert.ok(Number(wrote.result?.first_seq) <= Number(wrote.result?.last_seq))
   // In egdb by the time the write answers, so egdb-client's read-back has it.
   assert.equal(((await egdb('values', { entities: [raw] })).result as Record<string, Record<string, unknown>>)[raw].text, 'Raw', 'a write is read back through egdb')
   assert.deepEqual((await call('detail', id) as { children: { id: string }[] }).children.map((c) => c.id).slice(-1), [raw], 'and the engine has it')
   const found = JSON.stringify((await egdb('find', { filter: { key: 'type', op: 'eq', value: 'wf.setting' } })).result ?? {})
   assert.doesNotMatch(found, /"wf\./, 'settings never come back')
   assert.match(String((await egdb('values', { entities: ['wf.setting.phone.token'] })).error), /not read this way/)
-  assert.match(String((await egdb('undo', {})).error), /not open to the app/)
+  assert.match(String((await egdb('undo', {})).error), /An undo is \{ seq \}/)
+  assert.match(String((await egdb('archive_entity', { entity: raw })).error), /not open to the app/)
   // The window's way (renderer/src/egdb.ts): egdb-client over the `egdb` call, reading, writing and following the feed.
   {
     const win = newEgdb(() => ({ egdb: (route: string, body: unknown) => call('egdb', route, body) }) as unknown as WorkflowsAPI, 'tester')
@@ -317,6 +318,39 @@ const file = join(dir, 'round-trip.egdb')
     assert.equal(win.view().get(note)?.values?.text, 'A note', 'a write is read back once answered')
     const made = (await call('items', [note])) as { owner: string | null; assignees?: string[] }[]
     assert.deepEqual([made[0]?.owner, made[0]?.assignees], [null, []], 'a note made by a write is bare: nobody owns it or has it')
+
+    // Undo and redo (Ctrl+Z, Ctrl+Shift+Z): shown at once, then egdb takes the change off and the engine reads it back.
+    type Info = { id: string; parentId: string | null; title: string }
+    const info = async (x: string) => ((await call('items', [x])) as Info[])[0]
+    const text = (x: string) => win.view().get(x)?.values?.text
+    let undone = win.undo()
+    assert.equal(win.view().get(note)?.values?.type, undefined, 'an undone note goes at once')
+    assert.ok(await undone, 'and egdb takes it off')
+    assert.equal(await info(note), undefined, 'so the engine has it no more')
+    assert.ok(!win.view().get(raw)?.links['notes\u0000outbound']?.some((l) => l.destination === note))
+    let redone = win.redo()!
+    assert.equal(text(note), 'A note', 'a redo shows at once')
+    await redone
+    assert.equal((await info(note))?.parentId, raw, 'and the engine has it back, where it was')
+    // An edit, and a move, each put back as it was.
+    await win.write([{ set: { entity: note, key: 'text', value: 'Edited' } }])
+    assert.equal((await info(note))?.title, 'Edited')
+    undone = win.undo()
+    assert.equal(text(note), 'A note', 'an undone edit shows the text before it at once')
+    await undone
+    assert.equal((await info(note))?.title, 'A note', 'and the engine has it')
+    await win.write([{ link: { source: raw, destination: note, link_type: 'notes', sort: 'removed' } }, { link: { source: id, destination: note, link_type: 'notes', sort: 'timestamp' } }])
+    assert.equal((await info(note))?.parentId, id)
+    await win.undo()
+    assert.equal((await info(note))?.parentId, raw, 'an undone move puts it back in the note it was in')
+    // Only the person's newest change: one made since, another way, refuses it, and it shows again.
+    await win.write([{ set: { entity: note, key: 'text', value: 'Mine' } }])
+    await call('setValue', raw, 'text', 'Something else since')
+    undone = win.undo()
+    assert.equal(text(note), 'A note')
+    await assert.rejects(undone, /newest batch/)
+    assert.equal(text(note), 'Mine', 'a refused undo shows the change again')
+    assert.equal((await info(note))?.title, 'Mine')
     stop()
   }
   assert.match(String((await egdb('write', { ops: [{ set: { entity: 'wf.x', key: 'value', value: 1 } }] })).error), /not an item/)

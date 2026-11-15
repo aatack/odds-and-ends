@@ -3,7 +3,8 @@
 // - reads in `READS` go to egdb-server on the store's branch (the branch the request names is ignored), and anything
 //   on a settings entity (`wf.*`, where the secrets are) is taken out of what comes back;
 // - `/egdb/write` is the engine's `write` (raw ops, checked, as the person), so the engine and egdb stay the same;
-// - everything else (undo, archiving, branches) is refused.
+// - `/egdb/undo` is the engine's `undo`, as the person: only their own newest change, named by its first seq;
+// - everything else (archiving, branches) is refused.
 
 import type { Engine } from '../engine/engine'
 import type { Op } from 'egdb-client'
@@ -35,11 +36,16 @@ export async function egdbCall(target: EgdbTarget, engine: Engine, route: string
   const args = body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : {}
   if (route === 'write') {
     if (!Array.isArray(args.ops)) throw new Error('A write is { ops: [...] }.')
-    const made = await engine.write(args.ops as Op[], user)
-    // In egdb before answering, so a read made next (egdb-client reads back what it wrote) has it. The engine
-    // writes it in its own batches, so there are no seqs of this write's to give (first after last: none to undo).
+    const { made, landed } = await engine.writeLanding(args.ops as Op[], user)
     await engine.store.flush()
-    return { branch: target.branch, first_seq: 1, last_seq: 0, timestamp: Date.now(), made }
+    // In egdb before answering (where it landed says so), so a read made next (egdb-client reads back what it wrote)
+    // has it. Its seqs are what an undo names; none (first after last) when it did not land as one batch of the person's.
+    return { branch: target.branch, first_seq: landed?.first ?? 1, last_seq: landed?.last ?? 0, timestamp: landed?.timestamp ?? Date.now(), made }
+  }
+  if (route === 'undo') {
+    if (typeof args.seq !== 'number') throw new Error('An undo is { seq }: the first seq of the change it takes off.')
+    const removed = await engine.undo(args.seq, user)
+    return removed && { removed, events: 0, restored: 0 }
   }
   if (!READS.has(route)) throw new Error(`/egdb/${route} is not open to the app.`)
   if (JSON.stringify(args).includes('"wf.')) throw new Error('Settings are not read this way.')

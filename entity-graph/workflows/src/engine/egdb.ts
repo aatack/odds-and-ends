@@ -6,9 +6,9 @@ import type { LogEntry, LogQuery } from '../shared/types'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { EgdbClient, type Filter, type Op } from 'egdb-client'
+import { EgdbClient, UNDO_WINDOW_MS, type Filter, type Op } from 'egdb-client'
 import {
-  itemFromValues, legacyValues, ROOT, Store, type ItemRow, type Inspection, type LinkView, type Sink, type Via,
+  itemFromValues, legacyValues, ROOT, Store, type ItemRow, type Inspection, type Landed, type LinkView, type Reloaded, type Sink, type Undone, type Via,
 } from './store'
 
 const BRANCH_NAME = 'workflows'
@@ -32,13 +32,24 @@ interface Queued {
   ops: Op[]
   author: string
   at: number
+  /** Never joined by a later write, so that it lands as a batch of its own (one an undo can name). */
+  alone: boolean
+  /** Who waits to hear where it landed. */
+  landed: ((at: Landed | null) => void)[]
+  /** Written in more than one batch, or with another write's ops: no one batch is it, so it can't be named. */
+  shared: boolean
 }
+
+/** The link types an undo reads back, for each entity it touched (this build's: an older build's are read in on load). */
+const RELOAD_LINKS = ['comments', 'notes', 'pins', 'assignees', 'owns'] as const
 
 export class EgdbSink implements Sink {
   private queue: Queued[] = []
   private writing: Promise<void> | null = null
   /** The last write that failed, while its ops wait to go again. */
   error: string | null = null
+  /** The batches written lately (undo's window), by their first seq: their ops, so an undo knows what it touched. */
+  private recent = new Map<number, { ops: Op[]; author: string; wrote: number }>()
 
   constructor(
     private client: EgdbClient,
@@ -46,12 +57,17 @@ export class EgdbSink implements Sink {
     private onError: (message: string) => void = (m) => console.error(m),
   ) {}
 
-  write(ops: Op[], author: string, at: number): void {
+  write(ops: Op[], author: string, at: number, alone = false): Promise<Landed | null> {
     const last = this.queue.at(-1)
-    // Writes by the same author at the same moment go as one.
-    if (last && last.author === author && last.at === at) last.ops.push(...ops)
-    else this.queue.push({ ops: [...ops], author, at })
-    this.writing ??= this.drain()
+    return new Promise((landed) => {
+      // Writes by the same author at the same moment go as one.
+      if (!alone && last && !last.alone && last.author === author && last.at === at) {
+        last.ops.push(...ops)
+        last.shared = true
+        last.landed.push(landed)
+      } else this.queue.push({ ops: [...ops], author, at, alone, landed: [landed], shared: false })
+      this.writing ??= this.drain()
+    })
   }
 
   /**
@@ -74,9 +90,15 @@ export class EgdbSink implements Sink {
       }
       const ops = head.ops.slice(0, n)
       try {
-        if (ops.length) await this.client.write({ branch: this.branch, author: head.author, timestamp: head.at, ops })
+        const wrote = ops.length ? await this.client.write({ branch: this.branch, author: head.author, timestamp: head.at, ops }) : null
         head.ops.splice(0, ops.length)
-        if (!head.ops.length) this.queue.shift()
+        if (wrote && wrote.first_seq <= wrote.last_seq) this.remember(wrote.first_seq, ops, head.author)
+        if (head.ops.length) head.shared = true
+        else {
+          this.queue.shift()
+          const at = wrote && !head.shared && wrote.first_seq <= wrote.last_seq ? { first: wrote.first_seq, last: wrote.last_seq, timestamp: wrote.timestamp } : null
+          for (const l of head.landed) l(at)
+        }
         this.error = null
         wait = 250
       } catch (e) {
@@ -85,7 +107,11 @@ export class EgdbSink implements Sink {
         if (n === 1 && /length limit|too large|413/i.test((e as Error).message)) {
           this.onError(`Left out an op too big for egdb (${bytes} bytes): ${JSON.stringify(ops[0]).slice(0, 200)}`)
           head.ops.shift()
-          if (!head.ops.length) this.queue.shift()
+          head.shared = true
+          if (!head.ops.length) {
+            this.queue.shift()
+            for (const l of head.landed) l(null)
+          }
           continue
         }
         await new Promise((r) => setTimeout(r, wait))
@@ -97,6 +123,53 @@ export class EgdbSink implements Sink {
 
   async flush(): Promise<void> {
     while (this.writing) await this.writing
+  }
+
+  /** Keeps a batch's ops for undo's window, and forgets those older. */
+  private remember(first: number, ops: Op[], author: string): void {
+    const now = Date.now()
+    for (const [seq, b] of this.recent) if (now - b.wrote > UNDO_WINDOW_MS) this.recent.delete(seq)
+    this.recent.set(first, { ops: [...ops], author, wrote: now })
+  }
+
+  /**
+   * Takes `author`'s newest batch off egdb, if it is the one starting at `seq` (egdb refuses otherwise, and when it is
+   * older than its undo window), and reads back each entity it touched as egdb now holds it. Null: nothing to undo.
+   * Only a batch written since the backend started can be: its ops say what it touched.
+   */
+  async undo(author: string, seq: number): Promise<Undone | null> {
+    await this.flush()
+    const batch = this.recent.get(seq)
+    if (!batch || batch.author !== author) throw new Error('That change was not written by this backend lately, so it cannot be undone here.')
+    const outcome = await this.client.undo(this.branch, author, seq)
+    if (!outcome) return null
+    this.recent.delete(seq)
+    const ids = [...new Set(batch.ops.flatMap((o) => ('set' in o ? [o.set.entity] : [o.link.source, o.link.destination])))]
+    const groups = RELOAD_LINKS.flatMap((t) => [[t, 'outbound'], [t, 'inbound']] as const)
+    const [values, events, links] = await Promise.all([
+      this.client.values(this.branch, ids),
+      this.client.valueEvents(this.branch, ids),
+      this.client.linksIncludingArchived(this.branch, ids, groups),
+    ])
+    const entities = new Map<string, Reloaded>()
+    for (const id of ids) {
+      const x = values[id] ?? {}
+      const keys = events[id] ?? {}
+      const meta = (e: { timestamp: number; author: string } | undefined) => (e ? { at: e.timestamp, by: e.author } : undefined)
+      const r: Reloaded = { values: x, made: meta(keys.type), resolvedBy: meta(x.open === false ? keys.open : x.resolved === true ? keys.resolved : undefined), placed: null, pins: [], assignees: [], owner: null }
+      for (const g of links[id] ?? [])
+        for (const l of g.links) {
+          const m = { at: l.event?.timestamp ?? 0, by: l.event?.author ?? 'system' }
+          const when = typeof l.sort === 'number' ? l.sort : m.at
+          if ((g.link_type === 'comments' || g.link_type === 'notes') && g.direction === 'inbound') {
+            if (!r.placed || r.placed.at > m.at) r.placed = { parent: l.source, via: g.link_type, seq: Number(l.sort ?? 0), ...m }
+          } else if (g.link_type === 'pins' && g.direction === 'outbound') r.pins.push({ id: l.destination, at: when, by: m.by })
+          else if (g.link_type === 'assignees' && g.direction === 'outbound') r.assignees.push({ to: l.destination, at: when, by: m.by })
+          else if (g.link_type === 'owns' && g.direction === 'inbound') r.owner = { owner: l.source, at: when, by: m.by }
+        }
+      entities.set(id, r)
+    }
+    return { removed: outcome.removed, entities }
   }
 
   async log(query: LogQuery): Promise<LogEntry[]> {

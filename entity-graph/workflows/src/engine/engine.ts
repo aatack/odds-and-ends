@@ -16,7 +16,7 @@ import { PRESETS, type Preset } from './presets'
 import { IDLE_MINUTES, MAX_SCRIPTS, plainSecrets, Settings, type Secrets } from './settings'
 export { IDLE_MINUTES, MAX_SCRIPTS } from './settings'
 import type { Op } from 'egdb-client'
-import { ROOT, STATE_KEYS, Store, type ItemRow, type Inspection, type Via } from './store'
+import { ROOT, STATE_KEYS, Store, type ItemRow, type Inspection, type Landed, type Via } from './store'
 import { viewText, type Size, type Who } from './views'
 import { focusKind } from '../shared/views'
 import { inferPasted, inferType, inferUrl } from '../shared/infer'
@@ -1356,6 +1356,11 @@ export class Engine extends EventEmitter {
    * Nothing touches settings (`wf.*`), and an item is never archived (close it). Answers the ids made.
    */
   async write(ops: Op[], actor = this.me()): Promise<string[]> {
+    return (await this.writeLanding(ops, actor)).made
+  }
+
+  /** As `write`, and where it landed in egdb once it has: one batch of the actor's, which `undo` can name (else null). */
+  async writeLanding(ops: Op[], actor = this.me()): Promise<{ made: string[]; landed: Landed | null }> {
     const isSet = (o: Op): o is Extract<Op, { set: unknown }> => 'set' in o
     const touched = (o: Op) => (isSet(o) ? [o.set.entity] : [o.link.source, o.link.destination])
     for (const o of ops) {
@@ -1378,7 +1383,7 @@ export class Engine extends EventEmitter {
     for (const o of rest) for (const e of touched(o)) if (!this.row(e) && !made.has(e) && !this.holder(e) && !this.itemTypes.some((t) => t.type === e)) throw new Error(`No item ${e}.`)
     const ids: string[] = []
     const at = () => this.now()
-    this.store.batch(() => {
+    const { landed } = this.store.landing(() => this.store.batch(() => {
       for (const [id, m] of made) {
         if (m.parent && !this.row(m.parent) && !made.has(m.parent)) throw new Error(`No item ${m.parent}.`)
         // A note is only its values, as the notes view makes them: nobody owns it or is given it, open or not.
@@ -1410,10 +1415,23 @@ export class Engine extends EventEmitter {
         } else if (off) this.store.unpin(source, destination, actor, at())
         else if (source !== destination) this.store.pin(source, destination, actor, at())
       }
-    })
+    }))
     this.emit('change')
     if (actor !== 'script') await this.idle()
-    return ids
+    return { made: ids, landed: await landed }
+  }
+
+  /**
+   * Undoes the actor's newest change, if it is the one that landed at `seq` (`writeLanding`): egdb takes its events off
+   * (only the actor's own, from its last five minutes), and what it touched is read back into memory as egdb now has it.
+   * Null: nothing to undo (too old). Refused (thrown) when that is not their newest, or a later change replaced it.
+   */
+  async undo(seq: number, actor = this.me()): Promise<[number, number] | null> {
+    const undone = await this.store.undo(actor, seq)
+    if (!undone) return null
+    this.store.reload(undone.entities, this.blocking, (type) => !!this.typeOrNull(type))
+    this.emit('change')
+    return undone.removed
   }
 
   // ---- files ----

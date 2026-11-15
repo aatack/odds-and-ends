@@ -26,7 +26,7 @@ import { DISPLAYS, displayOf, type Display } from '../../shared/views'
 import { FileFocus, uploadFiles } from './FileView'
 import { pasteHere, usePaste } from './paste'
 import { NotesView } from './notes/NotesView'
-import { EgdbProvider } from 'egdb-client/react'
+import { EgdbProvider, useEgdb } from 'egdb-client/react'
 import { newEgdb } from './egdb'
 import { ItemInfoIcon, TYPE_NAME } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
@@ -120,9 +120,36 @@ function WithEgdb({ user, children }: { user: string; children: ReactNode }) {
   return <EgdbProvider egdb={egdb}>{children}</EgdbProvider>
 }
 
+/**
+ * Ctrl+Z undoes the person's last change made through the window's egdb (the notes tree, so far), and Ctrl+Shift+Z or
+ * Ctrl+Y redoes it: both show at once (egdb-client keeps what a change replaced, and the changes undone, here), and
+ * egdb takes the change's events off behind, only the person's own and only for five minutes. In a text box the keys
+ * are the box's own. A refusal (a later change replaced it, or they changed something else since) shows as an error.
+ */
+function useUndoKeys(act: (fn: () => Promise<unknown>) => Promise<void>) {
+  const egdb = useEgdb()
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.altKey || e.metaKey) return
+      const t = e.target
+      if (t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return
+      const key = e.key.toLowerCase()
+      const redo = (key === 'z' && e.shiftKey) || (key === 'y' && !e.shiftKey)
+      if (!redo && !(key === 'z' && !e.shiftKey)) return
+      e.preventDefault()
+      void act(async () => {
+        await (redo ? egdb.redo() : egdb.undo())
+      })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [egdb, act])
+}
+
 export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSignOut: () => void; onCloseSource: () => void }) {
   const items = useWorkflows()
   usePaste(items.act)
+  useUndoKeys(items.act)
   // Ctrl+W, Alt+Left and Ctrl+Shift+Tab (sent by the main process) take the top view off the stack; Alt+Right and Ctrl+Tab put it back.
   const { back, forward, open } = items
   useEffect(() => api().onBack(back), [back])

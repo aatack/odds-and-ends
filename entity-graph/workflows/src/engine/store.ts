@@ -28,6 +28,7 @@
 
 import type { Op, Value } from 'egdb-client'
 import type { LogEntry, LogQuery } from '../shared/types'
+import { legacyValues } from '../shared/legacy'
 
 /** The links a topic holds what is in it by: its chat, and its tree. */
 export type Via = 'comments' | 'notes'
@@ -83,9 +84,41 @@ export interface Inspection {
   inferred?: string | null
 }
 
+/** Where a write landed in egdb: its batch's seqs and time. */
+export interface Landed {
+  first: number
+  last: number
+  timestamp: number
+}
+
+/** An entity as egdb holds it after an undo: what memory needs to put it back as it was (`Store.reload`). */
+export interface Reloaded {
+  /** Its values; without a `type`, it is no item (any more). */
+  values: Record<string, unknown>
+  /** Who set its `type`, and when: who made it. */
+  made?: { at: number; by: string }
+  /** Who closed (or resolved) it, and when, while it is so. */
+  resolvedBy?: { at: number; by: string }
+  /** Where it sits: its `comments` or `notes` link, from its parent. */
+  placed: { parent: string; via: Via; seq: number; at: number; by: string } | null
+  /** Its `pins`, `assignees` and `owns` links (what is pinned to it, who has it, who owns it). */
+  pins: Pin[]
+  assignees: { to: string; at: number; by: string }[]
+  owner: Owned | null
+}
+
+/** What an undo took off egdb (its seqs), and the entities it touched as they now are. */
+export interface Undone {
+  removed: [number, number]
+  entities: Map<string, Reloaded>
+}
+
 /** Where the store's changes go to last: ops, as written by `author` at `at`. */
 export interface Sink {
-  write(ops: Op[], author: string, at: number): void
+  /** Answers where they landed, once they have; null when no one batch is them alone (joined, or split up). */
+  write(ops: Op[], author: string, at: number, alone?: boolean): Promise<Landed | null>
+  /** Takes `author`'s newest batch off egdb, if it starts at `seq`, and reads back what it touched. */
+  undo(author: string, seq: number): Promise<Undone | null>
   /** Settles once everything written so far has landed. */
   flush(): Promise<void>
   /** An entity as egdb holds it. */
@@ -151,6 +184,8 @@ export class Store {
   private held: Held[] | null = null
   /** The last moment handed out. */
   private moments = 0
+  /** While `landing` runs: where each of its writes will have landed. */
+  private landings: Promise<Landed | null>[] | null = null
 
   constructor(
     private sink: Sink | null = null,
@@ -161,7 +196,13 @@ export class Store {
   private out(ops: Op[], author: string, at: number): void {
     if (!ops.length) return
     if (this.held) this.held.push({ ops, author, at })
-    else this.sink?.write(ops, author, at)
+    else this.toSink(ops, author, at)
+  }
+
+  private toSink(ops: Op[], author: string, at: number): void {
+    if (!this.sink) return
+    const landed = this.sink.write(ops, author, at, !!this.landings)
+    this.landings?.push(landed)
   }
 
   /** Runs `fn`, writing what it changed to egdb together. */
@@ -173,12 +214,105 @@ export class Store {
     } finally {
       const held = this.held
       this.held = null
-      for (const h of held) this.sink?.write(h.ops, h.author, h.at)
+      // While a write's landing is wanted, what one author wrote in a row goes as one batch (at the first's time), so
+      // an undo takes it off whole.
+      const out: Held[] = []
+      for (const h of held) {
+        const last = out.at(-1)
+        if (this.landings && last && last.author === h.author) last.ops = [...last.ops, ...h.ops]
+        else out.push({ ...h })
+      }
+      for (const h of out) this.toSink(h.ops, h.author, h.at)
+    }
+  }
+
+  /**
+   * Runs `fn` (which writes through `batch`), and answers what it answers with where its write landed in egdb: one
+   * batch, which an undo can name; null when it wrote nothing, or more than one batch (another author's too).
+   */
+  landing<T>(fn: () => T): { value: T; landed: Promise<Landed | null> } {
+    const outer = this.landings
+    this.landings = []
+    const mine = this.landings
+    let value: T
+    try {
+      value = fn()
+    } finally {
+      this.landings = outer
+    }
+    const landed = Promise.all(mine).then((all) => (all.length === 1 ? all[0] : null))
+    return { value, landed }
+  }
+
+  /**
+   * Puts the entities an undo touched back as egdb now holds them (`Sink.undo`): each item's row, where it sits, what
+   * is pinned to it, who has it and who owns it; an entity with no `type` any more is no item, and what sat in it sits
+   * in none. What memory alone keeps of an item (its runs, its next check) stays.
+   */
+  reload(entities: Map<string, Reloaded>, blocking: (type: string) => boolean, known: (type: string) => boolean = () => true): void {
+    const rows = new Map<string, ItemRow>()
+    for (const [id, r] of entities) {
+      const x = legacyValues(r.values)
+      if (x.type === 'wf.setting') {
+        try {
+          this.settings.set(String(x.key), JSON.parse(String(x.value)))
+        } catch {
+          this.settings.delete(String(x.key))
+        }
+        continue
+      }
+      if (x.type === undefined || x.type === null || !known(String(x.type))) continue
+      const p = r.placed
+      const m = r.made ?? { at: p?.at ?? 0, by: p?.by ?? 'system' }
+      rows.set(id, itemFromValues(id, x, { parent: p?.parent ?? null, via: p?.via ?? null, seq: p?.seq ?? 0, at: m.at, by: m.by }, blocking(String(x.type)), r.resolvedBy))
+    }
+    // Off first, everything of each: its row, and the links it holds (its pins, its assignees, its owner).
+    for (const id of entities.keys()) {
+      const old = this.items.get(id)
+      if (old) {
+        this.kids.set(old.parent_id, this.children(old.parent_id).filter((k) => k.id !== id))
+        this.byType.get(old.type)?.delete(id)
+        this.items.delete(id)
+        const fresh = rows.get(id)
+        if (fresh) Object.assign(fresh, { runs: old.runs, next_check_at: old.next_check_at, last_error: old.last_error, added_n: old.added_n, resolved_n: fresh.resolved === old.resolved ? old.resolved_n : fresh.resolved ? this.moment() : 0 })
+      }
+      for (const pin of this.pins(id)) this.pinnedTo.set(pin.id, (this.pinnedTo.get(pin.id) ?? []).filter((f) => f !== id))
+      this.pinsOf.delete(id)
+      for (const to of this.assignees(id)) this.link(id, to, null)
+      this.indexOwner(id, null)
+    }
+    // Then back, as egdb has it: a parent that is no item leaves it in none.
+    for (const [id, row] of rows) {
+      if (row.parent_id && !this.items.has(row.parent_id) && !rows.has(row.parent_id)) Object.assign(row, { parent_id: null, via: null })
+      this.items.set(id, row)
+      this.kids.set(row.parent_id, [...this.children(row.parent_id), row].sort((a, b) => a.seq - b.seq))
+      this.byType.set(row.type, (this.byType.get(row.type) ?? new Set()).add(id))
+      const r = entities.get(id)!
+      for (const pin of [...r.pins].sort((a, b) => a.at - b.at)) if (this.items.has(pin.id) || rows.has(pin.id)) this.indexPin(id, pin)
+      for (const a of r.assignees) this.link(id, a.to, { at: a.at, by: a.by, n: this.moment() })
+      if (r.owner) this.indexOwner(id, r.owner)
+    }
+    // What sat in an item that is gone sits in none.
+    for (const id of entities.keys()) {
+      if (rows.has(id)) continue
+      const orphans = this.kids.get(id) ?? []
+      this.kids.delete(id)
+      for (const k of orphans) Object.assign(k, { parent_id: null, via: null })
+      if (orphans.length) this.kids.set(null, [...this.children(null), ...orphans])
+      // And nothing is pinned to it.
+      for (const from of this.pinnedIn(id)) this.pinsOf.set(from, this.pins(from).filter((p) => p.id !== id))
+      this.pinnedTo.delete(id)
     }
   }
 
   flush(): Promise<void> {
     return this.sink?.flush() ?? Promise.resolve()
+  }
+
+  /** Takes `author`'s newest batch off egdb if it starts at `seq` (`Sink.undo`); with no egdb (the tests), there is none to. */
+  undo(author: string, seq: number): Promise<Undone | null> {
+    if (!this.sink) return Promise.reject(new Error('Undo needs egdb.'))
+    return this.sink.undo(author, seq)
   }
 
   /**
