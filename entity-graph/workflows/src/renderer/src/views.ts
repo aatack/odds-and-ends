@@ -93,3 +93,6 @@ export const viewedAtom = atomWithStorage<string[]>('workflows.viewed', [], crea
 /** When each task was last opened here (kept across reloads): Next passes over those seen in the last `VIEWED_LATELY_MS`. */
 export const viewedAtAtom = atomWithStorage<Record<string, number>>('workflows.viewedAt', {}, createJSONStorage(() => localStorage), { getOnInit: true })
 export const VIEWED_LATELY_MS = 30 * 60 * 1000
+
+/** An item's other view, open in a small modal over this one (from a chat's or a tree's margin): Expand opens it. */
+export const previewAtom = atom<{ id: string; as: 'comments' | 'notes' } | null>(null)

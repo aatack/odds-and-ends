@@ -1,13 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Catalog, Item, ItemDetail, ItemInfo, ItemInfoDetail, Overview } from '../../shared/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { ChevronDown, ChevronLeft, ChevronUp, History, House, Inbox, Menu, MoreHorizontal, Plug, Server, Shapes, SkipForward, Smartphone, type LucideIcon } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronUp, History, House, Inbox, Maximize2, Menu, MoreHorizontal, Plug, Server, Shapes, SkipForward, Smartphone, type LucideIcon } from 'lucide-react'
 import { itemActions, type ItemAction } from './itemActions'
 import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
 import { IconButton } from './components/ui/IconButton'
 import { appearanceAtom, applyAppearance, MODES, SERIFS, THEMES } from './appearance'
 import { Chat } from './Chat'
+import { Modal } from './components/ui/Modal'
 import { DebugView } from './DebugView'
 import { Pins } from './Pins'
 import { ItemMenu } from './ItemMenu'
@@ -19,7 +20,7 @@ import { ItemRefContext, Markdown } from './components/ui/Markdown'
 import { GuideDoc } from './GuideDoc'
 import { ItemRef } from './ItemRef'
 import { Pill } from './sizes'
-import { DISPLAYS, displayOf, type Display } from '../../shared/views'
+import { DISPLAYS, displayOf, pillLabel, type Display } from '../../shared/views'
 import { FileFocus, uploadFiles } from './FileView'
 import { NotesView } from './notes/NotesView'
 import { ItemInfoIcon, TYPE_NAME } from './icons'
@@ -33,7 +34,7 @@ import { ScriptCard } from './ScriptCard'
 import { LinkFocus } from './LinkFocus'
 import { SlackChannels } from './SlackChannels'
 import { api, useWorkflows } from './useWorkflows'
-import { findAtom, findFocusAtom, forwardAtom, menuAtom, renameAtom, searchFocusAtom, viewedAtom, viewsAtom, type View } from './views'
+import { findAtom, findFocusAtom, forwardAtom, menuAtom, previewAtom, renameAtom, searchFocusAtom, viewedAtom, viewsAtom, type View } from './views'
 import { FindLine } from './FindLine'
 import { AssigneePill, OwnerPill, PickPill } from './Assignees'
 import { BotsPage, botStatus } from './BotsPage'
@@ -179,6 +180,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
           {mobile && <AppMenu mobile={mobile} onSignOut={onSignOut} onCloseSource={onCloseSource} />}
         </div>
         <ItemMenu actOn={items.actOn} overview={items.overview} recent={items.recent} />
+        <Preview />
       </ItemRefContext.Provider>
       </OverviewContext.Provider>
     </ItemsContext.Provider>
@@ -882,5 +884,68 @@ function Unsent() {
     <div className="view-note muted">
       Offline: {w.unsent} change{w.unsent === 1 ? '' : 's'} made here, sent when the connection is back.
     </div>
+  )
+}
+
+/**
+ * An item's other view in a modal (`previewAtom`, from a chat's or a tree's margin): its notes, or its comments.
+ * Expand keeps that view as its display, as the header's menu does, and opens it; anything opened from in it opens
+ * in the main view.
+ */
+function Preview() {
+  const w = useItems()
+  const [p, setP] = useAtom(previewAtom)
+  const [d, setD] = useState<ItemInfoDetail | null>(null)
+  const id = p?.id
+  useEffect(() => {
+    setD(null)
+    if (!id) return
+    let live = true
+    const read = () => void api().itemInfoDetail(id).then((x) => live && setD(x))
+    read()
+    const off = api().onChange(read)
+    return () => {
+      live = false
+      off()
+    }
+  }, [id])
+  if (!p) return null
+  const close = () => setP(null)
+  const open = (to: string) => {
+    close()
+    w.open({ kind: 'event', id: to })
+  }
+  const expand = () => {
+    if (d && d.info.params.display !== p.as) void w.act(() => api().setValue(p.id, 'display', p.as))
+    open(p.id)
+  }
+  return (
+    <Modal
+      size="preview"
+      onClose={close}
+      title={
+        <span className="preview-title">
+          <span className="pill-label">{d ? pillLabel(d.info) : 'Loading…'}</span>
+          <span className="muted">{p.as === 'notes' ? 'Notes' : 'Comments'}</span>
+          <button data-ui className="preview-expand" title="Open it here, on this view" onClick={expand}>
+            <Maximize2 className="icon" /> Expand
+          </button>
+        </span>
+      }
+    >
+      <div className="preview-body">
+        {!d ? (
+          <div className="empty muted">Loading…</div>
+        ) : p.as === 'notes' ? (
+          <NotesView key={d.info.id} info={d.info} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={open} onBack={close} />
+        ) : d.item && w.catalog ? (
+          <div className="chat-scroll">
+            <Chat detail={d.item} overview={w.overview} catalog={w.catalog} act={w.act} onOpen={open} />
+          </div>
+        ) : (
+          <div className="empty muted">Nothing to show.</div>
+        )}
+      </div>
+    </Modal>
   )
 }

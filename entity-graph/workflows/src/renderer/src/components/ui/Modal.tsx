@@ -9,14 +9,16 @@ import { openModal } from '../../state/ui'
  * How much of the screen the card takes. `md` is a form; `wide` is a form with a
  * table in it; `large` is a panel you work in rather than answer — nearly the
  * whole window, its body scrolling inside the card so that whatever the child
- * puts at the top (a tab bar) stays where it is.
+ * puts at the top (a tab bar) stays where it is. `preview` is a small `large`: a
+ * glance at another view (an item's notes or comments), to expand from.
  */
-export type ModalSize = 'md' | 'wide' | 'large'
+export type ModalSize = 'md' | 'wide' | 'large' | 'preview'
 
 const WIDTHS: Record<ModalSize, string> = {
   md: 'max-w-md',
   wide: 'max-w-2xl',
   large: 'max-w-5xl',
+  preview: 'max-w-3xl',
 }
 
 // A centred overlay with a click-away backdrop and a soft-edged card. The one
@@ -43,7 +45,7 @@ export function Modal({
   blur?: boolean
   children: ReactNode
 }): React.JSX.Element {
-  const large = size === 'large'
+  const large = size === 'large' || size === 'preview'
   const card = useRef<HTMLDivElement>(null)
   // Latest `onClose`, so registering once doesn't pin a stale one.
   const close = useRef(onClose)
@@ -79,7 +81,9 @@ export function Modal({
           // Exactly the room left by the backdrop's padding and the card's own
           // margin (1.5rem each, top and bottom), so the tall card fills the
           // window without the backdrop having anything to scroll.
-          large && 'flex h-[calc(100vh-6rem)] flex-col',
+          large && 'flex flex-col',
+          size === 'large' && 'h-[calc(100vh-6rem)]',
+          size === 'preview' && 'mt-[12vh] h-[60vh]',
         )}
         onClick={(e) => e.stopPropagation()}
       >

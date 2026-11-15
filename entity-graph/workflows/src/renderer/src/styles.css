@@ -423,6 +423,17 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .assignee-pill .icon { width: 13px; height: 13px; }
 .assignee-avatar { display: inline-flex; width: 20px; height: 20px; border-radius: 10px; align-items: center; justify-content: center; background: var(--panel); margin-left: -4px; }
 .assignee-avatar:first-child { margin-left: 0; }
+.margin-status { display: inline-flex; align-items: center; gap: 4px; align-self: center; margin: 0 6px; color: var(--color-gray-500); font-size: 12px; flex-shrink: 0; }
+.margin-status .icon { width: 13px; height: 13px; }
+.margin-link { display: inline-flex; align-items: center; gap: 3px; padding: 1px 5px; border-radius: 6px; color: inherit; }
+.margin-link:hover { background: var(--color-gray-100); color: var(--ink); }
+.note-row .margin-status { align-self: flex-start; margin-top: 2px; }
+/* An item's other view, in a modal over this one. */
+.preview-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.preview-expand { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; font-weight: 500; }
+.preview-expand .icon { width: 13px; height: 13px; }
+.preview-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
+.preview-body > .notes, .preview-body > .chat-scroll { flex: 1; min-height: 0; }
 .assignee-avatar.working { background: color-mix(in srgb, var(--accent) 20%, var(--panel)); }
 .sign-in { height: 100vh; display: flex; justify-content: center; padding-top: 20vh; background: var(--panel); }
 .sign-in .page { width: 420px; }

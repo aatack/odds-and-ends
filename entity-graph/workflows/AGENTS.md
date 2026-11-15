@@ -264,6 +264,11 @@ row out of its note (into none); `q` sections only, `Shift+Q` open ones only; Ct
 Escape clears a find or the filters. Where each tree was left (the row, what is folded) is kept per note. The wheel
 anywhere on the page scrolls the tree.
 
+**Margins** (`Margin.tsx`): beside a topic in a chat, an icon with how many notes it has; beside a row in a tree, how
+many comments (`ItemInfo.comments`/`notes`, counted by `toInfo`). Pressing it opens that view in a small modal
+(`previewAtom`, drawn by `Preview` in `App.tsx`); Expand keeps that view as the item's display and opens it. Who else
+has the topic (`ItemInfo.assignees`, less the person looking) shows there too, lit while a bot works on it.
+
 Bots read a topic's notes at its focus, as text (see the four sizes below): `get_item` gives them as `focus`, an
 indented tree with ids, cut at 100 lines with the ids to ask for the rest; a run's prompt tells its item's pins so.
 

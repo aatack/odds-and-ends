@@ -241,6 +241,9 @@ export class Engine extends EventEmitter {
       lastError: r.last_error,
       pins: this.store.pins(r.id).map((p) => p.id),
       pinnedIn: this.store.pinnedIn(r.id),
+      comments: this.store.children(r.id, 'comments').length,
+      notes: this.store.children(r.id, 'notes').length,
+      assignees: this.assignees(r.id),
     }
   }
 

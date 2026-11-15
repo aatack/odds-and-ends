@@ -18,6 +18,7 @@ import { modalOpen } from '../state/ui'
 import { TextInput, type Mentions } from '../TextInput'
 import { findAtom } from '../views'
 import { clearNotesError, createNote, notesError, moveNote, resolve, setNoteOpen, setNoteValue, useNotes, type NotesTree } from './store'
+import { Margin } from '../Margin'
 import './notes.css'
 
 const storage = <T,>() => createJSONStorage<T>(() => localStorage)
@@ -333,6 +334,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
             <span className="note-empty">Empty</span>
           )}
         </div>
+        {r.id !== root && <Margin info={r.info} other="comments" />}
       </div>
     )
   })

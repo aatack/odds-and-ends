@@ -77,6 +77,11 @@ export interface ItemInfo {
   pins: string[]
   /** The items it is pinned to (`pins` links to it): where it is referenced. */
   pinnedIn: string[]
+  /** How many items are in its comments, and in its notes (the margins of a chat and a tree show it has some). */
+  comments?: number
+  notes?: number
+  /** Who it is assigned to, the earliest first: as `Item.assignees`. */
+  assignees?: string[]
 }
 
 /** A topic (or any other item someone has: a bot, for its own chat), as the lists and its view read it. */
