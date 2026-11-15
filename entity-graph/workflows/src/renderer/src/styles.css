@@ -453,6 +453,9 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .margin-panel .notes-scroll { padding-bottom: 12px; }
 .margin-panel .composer { padding-top: 4px; padding-bottom: 10px; }
 .margin-panel .margin-status { display: none; }
+/* The Pins view (an item's pins on their own, or in a margin's thread): the right pane's lists, as the pane sets them. */
+.pins-view { display: flex; flex-direction: column; gap: 16px; max-width: 520px; }
+.margin-panel > .pins-view { padding: 12px 14px; overflow-y: auto; }
 .assignee-avatar.working { background: color-mix(in srgb, var(--accent) 20%, var(--panel)); }
 .sign-in { height: 100vh; display: flex; justify-content: center; padding-top: 20vh; background: var(--panel); }
 .sign-in .page { width: 420px; }

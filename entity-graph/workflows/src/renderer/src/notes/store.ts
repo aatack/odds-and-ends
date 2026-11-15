@@ -19,6 +19,8 @@ const GROUPS: LinkPair[] = [
   ['notes', 'inbound'],
   ['comments', 'inbound'],
   ['owns', 'inbound'],
+  ['pins', 'outbound'],
+  ['pins', 'inbound'],
 ]
 const key = ([t, d]: LinkPair) => `${t}\u0000${d}`
 /** The values an item's params leave out: how it stands, not what it was given (as engine/store.ts's STATE_KEYS). */
@@ -119,7 +121,7 @@ function infoOf(view: EntityView, id: string): ItemInfo | undefined {
     id, parentId: place?.parent ?? null, via: place?.via ?? null, owner: others(view, id, ['owns', 'inbound'])[0] ?? null, type, params,
     createdBy: made?.author ?? '', createdAt: made?.timestamp ?? 0, resolved: closed, closed, resolvedAt: null, resolvedBy: null,
     cancelled: false, data: null, actor: made?.author ?? '', summary, message: type === 'topic' ? summary : null,
-    nextCheckAt: null, lastError: null, runs: 0, pins: [], pinnedIn: [],
+    nextCheckAt: null, lastError: null, runs: 0, pins: others(view, id, ['pins', 'outbound']), pinnedIn: others(view, id, ['pins', 'inbound']),
     comments: others(view, id, ['comments', 'outbound']).length, notes: others(view, id, ['notes', 'outbound']).length,
     assignees: others(view, id, ['assignees', 'outbound']),
   }

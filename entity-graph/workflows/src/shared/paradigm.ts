@@ -66,10 +66,11 @@ Each item opens in one **view**. Its display sets the view. If it has no display
 - **Notes**: its tree.
 - **Focus**: the view for its type. For example, a whole file, a pull request's page, or a Slack thread.
 - **Assignments**: what is assigned to it, then what it owns, then what is pinned to it. A person or a bot opens here.
+- **Pins**: what is pinned to it, and the items it is pinned to.
 
 ${say(
   `To see an item in a different view, press the header of the topic. Or right-click the item and go to *Open*.`,
-  `get_item with \`size: focus\` reads an item as its view shows it. A chat gives its messages, notes give an indented tree with ids, and other items give their values. Set \`display\` with set_value (\`comments\`, \`notes\`, \`focus\` or \`assignments\`) to change how a topic opens for everyone.`,
+  `get_item with \`size: focus\` reads an item as its view shows it. A chat gives its messages, notes give an indented tree with ids, and other items give their values. Set \`display\` with set_value (\`comments\`, \`notes\`, \`focus\`, \`assignments\` or \`pins\`) to change how a topic opens for everyone.`,
 )}
 
 Many types of item can be pinned or added to a topic: links, pull requests, files, Slack messages and channels, bots, scripts and people. ${say(

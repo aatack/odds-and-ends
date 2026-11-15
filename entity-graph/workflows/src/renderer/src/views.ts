@@ -93,4 +93,4 @@ export const VIEWED_LATELY_MS = 30 * 60 * 1000
  * pressed (`button`; beneath its row, `anchor`, on a phone), as a comment thread opens beside a document: it has the
  * keys and the wheel while open; pressing outside it, or its icon again, closes it.
  */
-export const previewAtom = atom<{ id: string; as: 'comments' | 'notes'; anchor: HTMLElement; button: HTMLElement } | null>(null)
+export const previewAtom = atom<{ id: string; as: 'comments' | 'notes' | 'pins'; anchor: HTMLElement; button: HTMLElement } | null>(null)

@@ -5,16 +5,18 @@ import type { ItemKind } from './types'
 
 /**
  * The views every item has, whatever its type (beside Debug, which is the same for everything): its focus (its type's
- * own: a file itself, a bot's settings, anything else's details), its comments (a chat), its notes (a tree), or its
- * assignments (what is assigned to it, then what it owns: a person's or a bot's home). An item's `display` value says
+ * own: a file itself, a bot's settings, anything else's details), its comments (a chat), its notes (a tree), its
+ * assignments (what is assigned to it, then what it owns: a person's or a bot's home), or its pins (what is pinned to
+ * it, and what it is pinned to: the right pane's lists). An item's `display` value says
  * which it opens on; without one, its type does (`DISPLAY`).
  */
-export type Display = 'focus' | 'comments' | 'notes' | 'assignments'
+export type Display = 'focus' | 'comments' | 'notes' | 'assignments' | 'pins'
 export const DISPLAYS: { id: Display; label: string }[] = [
   { id: 'focus', label: 'Focus' },
   { id: 'comments', label: 'Comments' },
   { id: 'notes', label: 'Notes' },
   { id: 'assignments', label: 'Assignments' },
+  { id: 'pins', label: 'Pins' },
 ]
 
 /** The view each type opens on, unless the item says (`display`). */

@@ -274,7 +274,8 @@ anywhere on the page scrolls the tree.
 
 **Margins** (`Margin.tsx`): on a desktop a chat and a tree keep to a column (`--col-l`, `--col-r`) with a margin to
 its right, outside it; there, level with each topic, an icon with how many notes it has (in a chat) or comments (in a
-tree) (`ItemInfo.comments`/`notes`, counted by `toInfo`). Pressing it opens that view over the page, its top left at
+tree) (`ItemInfo.comments`/`notes`, counted by `toInfo`), and one with how many pins it has (`Pins`, the right pane's
+lists, which are also an item's Pins view). Pressing it opens that view over the page, its top left at
 the right of the icon, always 380px wide, as a comment thread opens beside a document, moving nothing under it; on a
 phone it opens beneath the row (`previewAtom`, drawn by `Preview` in `App.tsx`). It is
 the same view as the main one: the chat with its input, or the tree with its keys, `bare` (no title, parent or find

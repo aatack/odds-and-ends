@@ -488,6 +488,9 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
             {/* Your own page only: your Slack conversations, while Slack is set up. */}
             {e.id === w.overview.me.id && <SlackChannels onOpen={home ? openFromItems : openItem} />}
           </>
+        ) : shown === 'pins' ? (
+          // What is pinned to it and what it is pinned to: the right pane's lists, on their own.
+          <div className="pins-view">{pins}</div>
         ) : shown === 'notes' ? (
           <NotesView key={e.id} info={e} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={openItem} onBack={w.back} mobile={mobile} />
         ) : shown === 'comments' && d.item ? (
@@ -953,6 +956,10 @@ function Preview({ mobile }: { mobile: boolean }) {
       >
         {!d ? (
           <div className="empty muted">Loading…</div>
+        ) : p.as === 'pins' ? (
+          <div className="pins-view">
+            <Pins id={d.info.id} pins={d.pins} pinnedIn={d.pinnedIn} items={w.overview.items} recent={w.recent} act={w.act} onOpen={open} />
+          </div>
         ) : p.as === 'notes' ? (
           <NotesView key={d.info.id} info={d.info} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={open} onBack={() => setP(null)} bare />
         ) : d.item && w.catalog ? (
