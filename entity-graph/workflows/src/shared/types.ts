@@ -410,6 +410,12 @@ export interface WorkflowsAPI {
    * makes an item), and add or remove `comments`, `notes`, `assignees`, `owns` and `pins` links. Answers the ids made.
    */
   write: (ops: Op[]) => Promise<string[]>
+  /**
+   * One egdb call through the backend (egdbProxy.ts), as the person signed in: a read (`values`, `links`, `walk`,
+   * `find`, `log`, `branch`...) on the store's branch, without settings; or `write`, the engine's write. What egdb-client's
+   * hooks read the window's data with (renderer/src/egdb.ts).
+   */
+  egdb: (route: string, body: unknown) => Promise<unknown>
   /** The edit log: what was done, by whom and when, the newest first. */
   editLog: (query: LogQuery) => Promise<LogEntry[]>
   /** Adds items in a task, as the person signed in: what the chat input's default actions do. */
@@ -552,7 +558,7 @@ export interface LogEntry {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'write', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'setOpen', 'moveItem', 'newNotes', 'subtree', 'setInferredType', 'finder', 'items', 'setOwner', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'write', 'egdb', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'setOpen', 'moveItem', 'newNotes', 'subtree', 'setInferredType', 'finder', 'items', 'setOwner', 'editLog',
   'typeScripts', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'slackConversations', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',

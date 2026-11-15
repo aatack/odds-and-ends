@@ -9,7 +9,7 @@ import type { Engine } from '../engine/engine'
 import type { Op } from 'egdb-client'
 
 /** The egdb routes that only read, which the window may ask. */
-export const READS = new Set(['values', 'value_events', 'value', 'links', 'children', 'parents', 'exists', 'find', 'walk', 'log'])
+export const READS = new Set(['values', 'value_events', 'value', 'links', 'children', 'parents', 'exists', 'find', 'walk', 'log', 'branch'])
 
 export interface EgdbTarget {
   url: string
@@ -35,7 +35,11 @@ export async function egdbCall(target: EgdbTarget, engine: Engine, route: string
   const args = body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : {}
   if (route === 'write') {
     if (!Array.isArray(args.ops)) throw new Error('A write is { ops: [...] }.')
-    return { made: await engine.write(args.ops as Op[], user) }
+    const made = await engine.write(args.ops as Op[], user)
+    // In egdb before answering, so a read made next (egdb-client reads back what it wrote) has it. The engine
+    // writes it in its own batches, so there are no seqs of this write's to give (first after last: none to undo).
+    await engine.store.flush()
+    return { branch: target.branch, first_seq: 1, last_seq: 0, timestamp: Date.now(), made }
   }
   if (!READS.has(route)) throw new Error(`/egdb/${route} is not open to the app.`)
   if (JSON.stringify(args).includes('"wf.')) throw new Error('Settings are not read this way.')

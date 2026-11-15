@@ -28,6 +28,8 @@ import { handlers } from '../src/backend/api.ts'
 import { Changes, startPhone } from '../src/backend/http.ts'
 import { Admin } from '../src/engine/admin.ts'
 import { Engine } from '../src/engine/engine.ts'
+import { egdbServerPath, openStore, storeBranch } from '../src/engine/egdb.ts'
+import { ITEM_TYPES } from '../src/engine/itemTypes.ts'
 import type { Mcp } from '../src/engine/mcp.ts'
 import type { View } from '../src/renderer/src/views.ts'
 
@@ -51,16 +53,22 @@ if (!existsSync(join(built, 'index.html'))) throw new Error('No built renderer i
 
 // ---- the app, in memory ----
 const dir = mkdtempSync(join(tmpdir(), 'yawn-shot-'))
-const engine = new Engine({ dataDir: dir, exec: async () => '' })
+// On an egdb-server of its own, on a file in the temp folder, as the backend runs (the window reads through `egdb`);
+// in memory only when there is no egdb-server binary (npm run egdb:build), and then the window's egdb reads fail.
+const bin = egdbServerPath()
+const egdbToken = 'shot'
+const opened = bin !== 'egdb-server' && existsSync(bin) ? await openStore(join(dir, 'shot.egdb'), egdbToken, (t) => Boolean(ITEM_TYPES.find((x) => x.type === t)?.blocking)) : null
+const egdbTarget = opened ? { url: opened.egdb.url, token: egdbToken, branch: await storeBranch(opened.client) } : null
+const engine = new Engine({ dataDir: dir, exec: async () => '', ...(opened ? { store: opened.store } : {}) })
 await engine.signIn(ME)
 const extra: Record<string, string> = value('seed') ? await (await import(pathToFileURL(resolve(value('seed')!)).href)).default(engine) : await fixture(engine)
 const mcp = { operator: () => ({ url: 'http://127.0.0.1:0/mcp', error: null }), restartOperator: async () => {} } as unknown as Mcp
 const admin = new Admin(engine, mcp)
 const source = join(dir, 'shot.sqlite')
-const calls = (me: string) => handlers(engine, admin, me, source) as unknown as Record<string, (...args: unknown[]) => unknown>
+const calls = (me: string) => handlers(engine, admin, me, source, egdbTarget) as unknown as Record<string, (...args: unknown[]) => unknown>
 const changes = new Changes(engine)
 engine.settings.set('phone.port', 0)
-const phone = await startPhone({ engine, calls, changes, files: built })
+const phone = await startPhone({ engine, calls, changes, files: built, ...(egdbTarget ? { egdb: egdbTarget } : {}) })
 const url = phone.status().url
 const token = engine.settings.phoneToken()
 
@@ -124,6 +132,7 @@ try {
   await browser.close()
   phone.close()
   changes.close()
+  opened?.egdb.stop()
   rmSync(dir, { recursive: true, force: true })
 }
 console.log(written.join('\n'))

@@ -9,6 +9,7 @@ import { slackConversations } from '../engine/slack'
 import type { Admin } from '../engine/admin'
 import type { Engine } from '../engine/engine'
 import { catalog } from '../engine/mcp'
+import { egdbCall, type EgdbTarget } from './egdbProxy'
 
 type Methods = Omit<WorkflowsAPI, 'onChange' | 'onBack' | 'onForward' | 'setUser' | 'openSource' | 'closeSource' | 'setToken' | 'token' | 'copyFile'>
 type Handlers = { [K in keyof Methods]: (...args: Parameters<Methods[K]>) => unknown }
@@ -16,7 +17,7 @@ type Handlers = { [K in keyof Methods]: (...args: Parameters<Methods[K]>) => unk
 /** Calls that need nobody signed in: signing in, seeing who there is to sign in as, and which source it is (the phone asks first). */
 export const OPEN_METHODS = new Set(['signIn', 'users', 'saveUser', 'catalog', 'source'])
 
-export function handlers(engine: Engine, admin: Admin, me: string, source = ''): Handlers {
+export function handlers(engine: Engine, admin: Admin, me: string, source = '', egdb: EgdbTarget | null = null): Handlers {
   return {
     overview: () => engine.overview(me),
     detail: (id) => engine.detail(id, me),
@@ -31,6 +32,10 @@ export function handlers(engine: Engine, admin: Admin, me: string, source = ''):
     close: (id) => engine.close(id, { actor: me }),
     reopen: (id) => engine.reopen(id, me),
     write: (ops) => engine.write(ops, me),
+    egdb: (route, body) => {
+      if (!egdb) throw new Error('This backend has no egdb.')
+      return egdbCall(egdb, engine, route, body, me)
+    },
     addItems: (itemId, specs, via) => engine.addItems(itemId, specs, me, 'human', via ?? 'comments'),
     uploadFile: (itemId, name, base64) => engine.uploadFile(itemId, name, base64, me),
     fileData: async (itemId) => engine.fileData(itemId),

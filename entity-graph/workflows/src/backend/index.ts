@@ -58,7 +58,7 @@ async function main(): Promise<void> {
   const mcp = await startMcp(engine)
   const runner = new BotRunner(engine, mcp.runUrl)
   const admin = new Admin(engine, mcp)
-  const api = (me: string) => handlers(engine, admin, me, file) as unknown as Record<string, (...args: unknown[]) => unknown>
+  const api = (me: string) => handlers(engine, admin, me, file, egdbTarget) as unknown as Record<string, (...args: unknown[]) => unknown>
   engine.on('sourceError', (message: string) => log(message))
 
   const changes = new Changes(engine)

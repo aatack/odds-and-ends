@@ -1381,7 +1381,8 @@ export class Engine extends EventEmitter {
     this.store.batch(() => {
       for (const [id, m] of made) {
         if (m.parent && !this.row(m.parent) && !made.has(m.parent)) throw new Error(`No item ${m.parent}.`)
-        ids.push(...this.addNow(m.parent, this.prepare([{ type: m.type as ItemSpec['type'], params: m.params, id }], 'human'), actor, null, m.via))
+        // A note is only its values, as the notes view makes them: nobody owns it or is given it, open or not.
+        ids.push(...this.addNow(m.parent, this.prepare([{ type: m.type as ItemSpec['type'], params: m.params, id, ...(m.parent && m.via === 'notes' ? { bare: true } : {}) }], 'human'), actor, null, m.via))
       }
       for (const o of rest) {
         if (isSet(o)) {

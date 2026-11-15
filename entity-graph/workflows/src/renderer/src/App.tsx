@@ -25,6 +25,8 @@ import { Pill } from './sizes'
 import { DISPLAYS, displayOf, type Display } from '../../shared/views'
 import { FileFocus, uploadFiles } from './FileView'
 import { NotesView } from './notes/NotesView'
+import { EgdbProvider } from 'egdb-client/react'
+import { newEgdb } from './egdb'
 import { ItemInfoIcon, TYPE_NAME } from './icons'
 import { IntegrationsPage } from './IntegrationsPage'
 import { McpPage } from './McpPage'
@@ -99,7 +101,7 @@ export function Root() {
         }}
       />
     )
-  return <App key={open} mobile={mobile} onSignOut={() => {
+  return <WithEgdb key={open} user={user}><App mobile={mobile} onSignOut={() => {
     api().setUser(null)
     setUser(null)
     setOpen(null)
@@ -107,7 +109,14 @@ export function Root() {
     void api().closeSource()
     setSource(null)
     setOpen(null)
-  }} />
+  }} /></WithEgdb>
+}
+
+/** egdb-client's cache and hooks (egdb.ts) for everything in the app, as `user`, following the change feed while open. */
+function WithEgdb({ user, children }: { user: string; children: ReactNode }) {
+  const [egdb] = useState(() => newEgdb(api, user, (e) => console.warn('egdb:', e)))
+  useEffect(() => egdb.follow(), [egdb])
+  return <EgdbProvider egdb={egdb}>{children}</EgdbProvider>
 }
 
 export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onSignOut: () => void; onCloseSource: () => void }) {

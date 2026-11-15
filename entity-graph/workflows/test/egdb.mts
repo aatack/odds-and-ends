@@ -9,6 +9,8 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { EgdbClient, type Op } from 'egdb-client'
+import { newEgdb } from '../src/renderer/src/egdb.ts'
+import type { WorkflowsAPI } from '../src/shared/types.ts'
 import { egdbServerPath, loadStore, startEgdb, storeBranch } from '../src/engine/egdb.ts'
 import { Engine } from '../src/engine/engine.ts'
 import { ITEM_TYPES } from '../src/engine/itemTypes.ts'
@@ -290,14 +292,33 @@ const file = join(dir, 'round-trip.egdb')
   assert.match(String((await egdb('values', { entities: [id] }, null)).error), /Sign in first/)
   const raw = '7f1c8a52-1111-4b6e-9a0a-000000000001'
   const wrote = await egdb('write', { ops: [{ set: { entity: raw, key: 'type', value: 'topic' } }, { set: { entity: raw, key: 'text', value: 'Raw' } }, { link: { source: id, destination: raw, link_type: 'comments', sort: 'timestamp' } }] })
-  assert.deepEqual(wrote.result, { made: [raw] })
-  for (let i = 0; i < 50 && !((await egdb('values', { entities: [raw] })).result as Record<string, Record<string, unknown>> | undefined)?.[raw]?.text; i++) await new Promise((r) => setTimeout(r, 50))
+  assert.deepEqual(wrote.result?.made, [raw])
+  // As egdb's own write answers (egdb-client reads it), with no seqs to undo: the engine wrote it in its own batches.
+  assert.ok(Number(wrote.result?.first_seq) > Number(wrote.result?.last_seq))
+  // In egdb by the time the write answers, so egdb-client's read-back has it.
   assert.equal(((await egdb('values', { entities: [raw] })).result as Record<string, Record<string, unknown>>)[raw].text, 'Raw', 'a write is read back through egdb')
   assert.deepEqual((await call('detail', id) as { children: { id: string }[] }).children.map((c) => c.id).slice(-1), [raw], 'and the engine has it')
   const found = JSON.stringify((await egdb('find', { filter: { key: 'type', op: 'eq', value: 'wf.setting' } })).result ?? {})
   assert.doesNotMatch(found, /"wf\./, 'settings never come back')
   assert.match(String((await egdb('values', { entities: ['wf.setting.phone.token'] })).error), /not read this way/)
   assert.match(String((await egdb('undo', {})).error), /not open to the app/)
+  // The window's way (renderer/src/egdb.ts): egdb-client over the `egdb` call, reading, writing and following the feed.
+  {
+    const win = newEgdb(() => ({ egdb: (route: string, body: unknown) => call('egdb', route, body) }) as unknown as WorkflowsAPI, 'tester')
+    await win.load([id, raw], [['comments', 'outbound']])
+    assert.ok(win.view().get(id)?.links['comments\u0000outbound']?.some((l) => l.destination === raw), 'it reads through the call')
+    const stop = win.follow({ wait: 2000 })
+    for (let i = 0; i < 50 && win.store.get(win.headAtom) === null; i++) await new Promise((r) => setTimeout(r, 50))
+    await call('setValue', raw, 'text', 'Changed elsewhere')
+    for (let i = 0; i < 60 && win.view().get(raw)?.values?.text !== 'Changed elsewhere'; i++) await new Promise((r) => setTimeout(r, 50))
+    assert.equal(win.view().get(raw)?.values?.text, 'Changed elsewhere', 'the feed brings a change made elsewhere')
+    const note = '7f1c8a52-1111-4b6e-9a0a-000000000002'
+    await win.write([{ set: { entity: note, key: 'type', value: 'topic' } }, { set: { entity: note, key: 'text', value: 'A note' } }, { link: { source: raw, destination: note, link_type: 'notes', sort: 'timestamp' } }])
+    assert.equal(win.view().get(note)?.values?.text, 'A note', 'a write is read back once answered')
+    const made = (await call('items', [note])) as { owner: string | null; assignees?: string[] }[]
+    assert.deepEqual([made[0]?.owner, made[0]?.assignees], [null, []], 'a note made by a write is bare: nobody owns it or has it')
+    stop()
+  }
   assert.match(String((await egdb('write', { ops: [{ set: { entity: 'wf.x', key: 'value', value: 1 } }] })).error), /not an item/)
   // A second backend on the same data refuses to start.
   const second = spawn(process.execPath, ['--import', 'tsx', 'src/backend/index.ts', '--file', typed], { stdio: ['ignore', 'pipe', 'pipe'] })
