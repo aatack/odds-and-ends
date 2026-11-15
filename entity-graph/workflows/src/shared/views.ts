@@ -44,3 +44,9 @@ export const focusKind = (i: { type: ItemKind; params: Record<string, unknown> }
 
 /** An item's name as its pill shows it (`[id]()` in any text): the first line of what it says. */
 export const pillLabel = (i: { summary: string }): string => i.summary.split('\n')[0]
+
+/**
+ * Whether a topic is a task, as it stands: someone owns it (to close it out) or has it (to action it now). A topic that
+ * is neither is a comment or a note, whatever its `open` (only its checkbox in the notes) says.
+ */
+export const isTask = (i: { owner?: string | null; assignees?: string[] }): boolean => !!i.owner || !!i.assignees?.length

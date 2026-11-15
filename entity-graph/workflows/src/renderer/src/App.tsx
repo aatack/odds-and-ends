@@ -787,7 +787,9 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
   // wake, a script running or due to run. In a bot's own chat, the bot itself.
   // A file dropped on the chat is kept as a file item here; what is pasted on it (not in its input) is said here (`pasteHere`).
   const [dropping, setDropping] = useState(false)
-  const take = (files: File[]) => files.length > 0 && !item.closed && void act(() => uploadFiles(item.id, files))
+  // A topic is never closed to writing (done, it is only no task); a bot or script closed is gone.
+  const shut = item.closed && item.type !== 'topic'
+  const take = (files: File[]) => files.length > 0 && !shut && void act(() => uploadFiles(item.id, files))
   return (
     <div
       className={`item ${dropping ? 'dropping' : ''}`}
@@ -821,7 +823,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
       </div>
       <Assignees item={item} overview={w.overview} onOpen={onOpen} />
       <div className="composer">
-        {item.closed ? (
+        {shut ? (
           <div className="composer-bar muted">
             Closed.
             <button data-ui onClick={() => void act(() => api().reopen(item.id))}>

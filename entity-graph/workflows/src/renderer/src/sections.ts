@@ -40,7 +40,7 @@ export const SECTIONS: Record<SectionId, Section> = {
   assigned: { label: 'Assigned', items: (items, r) => items.filter((i) => open(i) && i.assignees.some((a) => whose(r).includes(a))) },
   owned: {
     label: 'Owned',
-    items: (items, r) => items.filter((i) => open(i) && !!i.owner && whose(r).includes(i.owner) && !i.assignees.some((a) => whose(r).includes(a)) && i.open !== null),
+    items: (items, r) => items.filter((i) => open(i) && !!i.owner && whose(r).includes(i.owner) && !i.assignees.some((a) => whose(r).includes(a))),
   },
   pinned: { label: 'Pinned', items: (_items, r) => r.pinned ?? [] },
   unassigned: { label: 'Recently unassigned', items: (_items, r) => r.unassigned ?? [] },

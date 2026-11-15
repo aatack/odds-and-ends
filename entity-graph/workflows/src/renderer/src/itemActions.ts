@@ -32,8 +32,9 @@ export const TYPE_ACTIONS: Partial<Record<string, (e: Target, ctx: { act: Act })
  * offered beside these (`typeScripts`).
  */
 export function itemActions(e: Target, ctx: { act: Act }): ItemAction[] {
+  // A topic done (no task: nobody owns or has it) is taken on, as yours to close out; anything else closed, reopened.
   const own: ItemAction[] = e.closed
-    ? [{ id: 'reopen', label: 'Reopen', important: true, icon: RotateCcw, tone: '', run: () => void ctx.act(() => api().reopen(e.id)) }]
+    ? [{ id: 'reopen', label: e.type === 'topic' ? 'Take it on' : 'Reopen', important: true, icon: RotateCcw, tone: '', run: () => void ctx.act(() => api().reopen(e.id)) }]
     : [{ id: 'close', label: 'Close', important: true, icon: CircleCheck, tone: 'text-success-600 hover:text-success-600', run: () => void ctx.act(() => api().close(e.id)) }]
   return [
     ...own,

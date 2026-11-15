@@ -121,12 +121,10 @@ const file = join(dir, 'round-trip.egdb')
   assert.ok((await engine2.inspect(id)).links.some((l) => l.type === 'assignees' && l.other === 'alex'))
   assert.equal(engine2.owner(id), 'alex')
   assert.equal(engine2.owner(bot), 'alex', 'a bot is owned by whoever made it')
-  // A closed topic is `open: false`; when it closed, and who closed it, is egdb's event for that value.
+  // A closed topic is one nobody owns or has: its `owns` and `assignees` links taken off; its `open` (a checkbox) untouched.
   const closed = await engine2.inspect(done)
-  assert.equal(closed.values.open, false)
-  assert.ok(!('resolved' in closed.values) && !('resolved_at' in closed.values))
-  assert.deepEqual([closed.set.open.at, closed.set.open.by], [engine.info(done)!.resolvedAt, 'alex'])
-  assert.deepEqual([engine2.info(done)!.resolvedAt, engine2.info(done)!.resolvedBy], [engine.info(done)!.resolvedAt, 'alex'])
+  assert.ok(!('open' in closed.values) && !('resolved' in closed.values) && !('resolved_at' in closed.values))
+  assert.deepEqual([engine2.owner(done), engine2.assignees(done), engine2.info(done)!.closed], [null, [], true])
   assert.equal(engine2.settings.mcpPort(), 1234)
   const branch = (await again.client.branches())[0].id
   await again.store.flush()
@@ -151,7 +149,7 @@ const file = join(dir, 'round-trip.egdb')
   const fourth = await loadStore(again.client, blocking)
   assert.deepEqual(fourth.store.pinnedIn(note.id), [], 'unpinned, both stay unpinned')
   assert.equal(fourth.store.items.get(note.id)!.parent_id, id)
-  assert.equal(third.store.items.get(done)!.resolved, false, 'a reopened task reads back open')
+  assert.equal(third.store.owner(done)?.owner, 'alex', 'a reopened task reads back owned')
   // A move is a link removed and another added: read back, the item sits where it went (made when and by whom it was).
   const notes = fourth.store
   const [moved, into] = ['n-moved', 'n-into'].map((nid, i) => {
@@ -210,16 +208,16 @@ const file = join(dir, 'round-trip.egdb')
   const engine = new Engine({ store: first.store, now: () => Date.now(), dataDir: dir })
   await engine.signIn('alex')
   assert.deepEqual(['old-task', 'old-comment', 'old-done', 'old-plan', 'old-step', 'old-sub'].map((i) => engine.info(i)!.type), Array(6).fill('topic'), 'tasks and notes are topics, by the same ids')
-  assert.deepEqual([engine.get('old-task')!.title, engine.isClosed('old-task'), engine.isClosed('old-done')], ['Old task', false, true])
+  assert.deepEqual([engine.get('old-task')!.title, engine.get('old-task')!.closed, engine.get('old-done')!.closed], ['Old task', false, true])
   assert.deepEqual(engine.children('old-task').map((c) => c.id), ['old-comment', 'old-sub'], "a task's items are its comments")
   assert.deepEqual(engine.subtree('old-plan').map((c) => c.id), ['old-plan', 'old-step'], "a note's are its notes")
   assert.equal(engine.info('old-plan')!.params.display, 'notes', 'and a note shows them')
   assert.equal(engine.info('old-step')!.params.open, true, 'its checkbox is its status')
   assert.deepEqual(engine.assignees('old-task'), ['old-bot'])
-  assert.deepEqual(['old-task', 'old-sub', 'old-bot', 'old-plan'].map((i) => engine.owner(i)), ['alex', 'alex', 'alex', 'alex'], "owners, by the older build's rule")
+  assert.deepEqual(['old-task', 'old-sub', 'old-bot', 'old-plan', 'old-done'].map((i) => engine.owner(i)), ['alex', 'alex', 'alex', null, null], "owners, by the older build's rule, of what is still a task (a note, or a done task, is none)")
   assert.deepEqual(await olds(), before, "the older build's values and links are as they were")
   const added = { comments: await count('comments'), notes: await count('notes'), assignees: await count('assignees'), owns: await count('owns') }
-  assert.deepEqual(added, { comments: 2, notes: 1, assignees: 1, owns: 7 })
+  assert.deepEqual(added, { comments: 2, notes: 1, assignees: 1, owns: 3 })
 
   // Loaded again, nothing is added twice; what the older build adds since is read in.
   await client.write({ branch, author: 'alex', timestamp: Date.now() + 10, ops: [...set('old-later', { type: 'note', text: 'Later' }), contains('old-task', 'old-later', 2)] })
@@ -227,7 +225,7 @@ const file = join(dir, 'round-trip.egdb')
   await second.store.flush()
   const engine2 = new Engine({ store: second.store, now: () => Date.now(), dataDir: dir })
   assert.deepEqual(engine2.children('old-task').map((c) => c.id), ['old-comment', 'old-sub', 'old-later'])
-  assert.deepEqual({ comments: await count('comments'), notes: await count('notes'), assignees: await count('assignees'), owns: await count('owns') }, { ...added, comments: 3, owns: added.owns + 1 }, 'the new comment is owned too')
+  assert.deepEqual({ comments: await count('comments'), notes: await count('notes'), assignees: await count('assignees'), owns: await count('owns') }, { ...added, comments: 3 }, 'the new comment is put in, and owned by nobody: a comment is no task')
   egdb.stop()
 }
 

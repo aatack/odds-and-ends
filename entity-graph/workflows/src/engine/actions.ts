@@ -111,7 +111,7 @@ export const itemActions: Action[] = [
     name: 'list_items',
     unsafe: false,
     description:
-      'Every open topic (and anything else someone has), and the topics closed in the last day: who has it and who owns it, whether it is their turn, and what blocks it.',
+      'Every task (a topic someone owns or has) and anything else someone has: who has it and who owns it, whether it is their turn, and what blocks it.',
     input: {},
     run: async (_a, { engine }) => {
       return engine.overview().items.map((i) => ({
@@ -307,7 +307,7 @@ export const itemActions: Action[] = [
     name: 'add_items',
     unsafe: false,
     description:
-      "Add items in a topic's comments (or in a bot's chat): comments (topics with just text), scripts, open topics to split work off. " +
+      "Add items in a topic's comments (or in a bot's chat): comments (topics with just text), scripts, tasks to split work off (topics given `assignees`: owned, and pinned where they are made). " +
       'With `via: notes`, in its notes (its tree) instead. With no item_id, add topics, bots, scripts or people that sit in none.',
     input: { item_id: itemId.optional(), items: z.array(spec), via: z.enum(['comments', 'notes']).optional() },
     run: async (a, ctx) => {
@@ -319,7 +319,7 @@ export const itemActions: Action[] = [
     unsafe: false,
     description:
       'Pin items to an item (`pins` links): what is pinned to it shows beside it (cards on the right of a topic), as useful in actioning it: ' +
-      'open topics made in it (pinned as they are made), pull requests, preview links, files, the topic it came from. Followed backwards, they say where an item is ' +
+      'tasks made in it (pinned as they are made), pull requests, preview links, files, the topic it came from. Followed backwards, they say where an item is ' +
       'referenced (get_item: pins and pinnedIn). With unpin, take them off. Pinning moves nothing: each item stays where it sits.',
     input: { item_id: itemId, item_ids: z.array(z.string()), unpin: z.boolean().optional() },
     run: async (a, ctx) => {
@@ -366,12 +366,12 @@ export const itemActions: Action[] = [
     unsafe: false,
     description: [
       'Change items with raw egdb ops: the one write. Ops are applied in order, as one change, as you.',
-      '- `{ set: { entity, key, value } }` sets a value (null clears it). On an id no item has, with key `type`, it makes an item of that id (a new UUID you choose); the batch\'s other sets on that id are its values. Whoever makes an item owns it, and a new open topic is assigned to them too, as with add_items.',
+      '- `{ set: { entity, key, value } }` sets a value (null clears it). On an id no item has, with key `type`, it makes an item of that id (a new UUID you choose); the batch\'s other sets on that id are its values. A topic is a task once someone has it: assigning one nobody owns makes whoever assigned it its owner. A bot or script is owned by whoever makes it.',
       '- `{ link: { source, destination, link_type, sort } }` adds a link; `sort: "removed"` takes it off. `sort` is `"timestamp"` (after the rest) or `{ explicit: n }`. Link types: `comments` (source holds destination in its chat), `notes` (in its tree), `assignees` (item → person, bot or script it is assigned to), `owns` (owner → item; one owner, a new one replaces the last), `pins` (item → what is pinned to it).',
       'Actions, as ops:',
-      '- comment in a topic T: `set(id, type, "topic")`, `set(id, text, "…")`, `link(T, id, comments)`. A thing to be done: also `set(id, open, true)`. A note in its tree: `link(T, id, notes)`.',
+      '- comment in a topic T: `set(id, type, "topic")`, `set(id, text, "…")`, `link(T, id, comments)`. A thing to be done: also `link(id, person, assignees)`. A note in its tree: `link(T, id, notes)`; `set(id, open, true)` draws it as a checkbox there (that is all `open` does on a topic).',
       '- assign X to B: `link(X, B, assignees)`; take it off: the same with `sort: "removed"`. Hand it on: both.',
-      '- close X: unlink its owner (`link(owner, X, owns, removed)`), unlink each assignee, and `set(X, open, false)`. That is all closing is. Only a person reopens.',
+      '- close X: unlink its owner (`link(owner, X, owns, removed)`) and each assignee. That is all closing a topic is (a bot or script: also `set(X, open, false)`). Only a person reopens.',
       '- own: `link(person, X, owns)`. Pin P to X: `link(X, P, pins)`. Move X into Y\'s notes: `link(Y, X, notes)`.',
       '- rename a topic: set its `text` (its first line is its name). Change how it opens: set `display`.',
       'get_item shows an item\'s owner and assignees, to unlink. Never: settings (`wf.*`), state keys (`resolved`…), archiving (`type` null).',
@@ -403,7 +403,7 @@ export const itemActions: Action[] = [
     unsafe: false,
     description:
       "Set one value on an item (null clears it): any key, any value (a type's params, in item_types, are only advice), e.g. a " +
-      "topic's text, open (its status) or display, or a script's state on a topic it holds. Bots are items too: this is how to change a bot's instructions, name or cycle_minutes, keeping its session and topics. " +
+      "topic's text, open (its checkbox in the notes) or display, or a script's state on a topic it holds. Bots are items too: this is how to change a bot's instructions, name or cycle_minutes, keeping its session and topics. " +
       'Not how it stands (type, resolved…: those have their own tools). ' +
       'Whatever shows it is told at once.',
     input: { item_id: itemId, key: z.string(), value: z.unknown() },
@@ -423,9 +423,17 @@ export const itemActions: Action[] = [
     },
   },
   {
+    name: 'disown_comments',
+    unsafe: true,
+    description:
+      'Once, for a store from before tasks were what someone owns: takes the owner off every topic that was no task then (never given a status, and nobody has it), so only tasks are owned. Says how many. Only when a person asks.',
+    input: {},
+    run: async (_a, ctx) => `Took the owner off ${await ctx.engine.disownComments(ctx.actor)} topics.`,
+  },
+  {
     name: 'close_item',
     unsafe: false,
-    description: 'Close any item. Closing means exactly this: its owner and every assignee are taken off it, and its open is set to false. Nothing else changes: what is in it stays as it is. A closed bot or script has no owner, so nothing runs it.',
+    description: 'Close any item. Closing means exactly this: its owner and every assignee are taken off it (a topic is then no task; a bot or script also has its open set to false). Nothing else changes: what is in it, and a topic\'s checkbox, stay as they are. A closed bot or script has no owner, so nothing runs it.',
     input: { item_id: itemId },
     run: async (a, ctx) => {
       await ctx.engine.close(String(a.item_id), { actor: ctx.actor })

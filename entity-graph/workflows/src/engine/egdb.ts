@@ -335,9 +335,9 @@ export async function loadStore(
 /**
  * Reads an older build's links into this build's, adding links and rewriting nothing: an item an older build put in a
  * task (its first `contains` link) is put in its comments, or in its notes if the parent was a note; a later `contains`
- * (an older build's pin) is a pin; an `assigned_to` link is an `assignees` link; and each topic, bot and script the older
- * build made is owned by its owner as that build saw it (whoever made it if a person, else the owner of what it sits in,
- * else the owner of the bot that made it). Each link is written as whoever wrote the original, sorted by its time.
+ * (an older build's pin) is a pin; an `assigned_to` link is an `assignees` link; and each task still open, bot and
+ * script the older build made is owned by its owner as that build saw it (whoever made it if a person, else the owner of
+ * what it sits in, else the owner of the bot that made it): a task is what someone owns, so a note or a done task is not. Each link is written as whoever wrote the original, sorted by its time.
  */
 function migrate(m: {
   stored: Map<string, Record<string, unknown>>
@@ -400,7 +400,9 @@ function migrate(m: {
     return bot ? ownerOf(bot, depth + 1) : null
   }
   for (const id of made.keys()) {
-    if (ownerMap.has(id) || !['task', 'note', 'bot', 'script'].includes(typeOf(id))) continue
+    const x = stored.get(id) ?? {}
+    const doneTask = typeOf(id) === 'task' && (x.resolved === true || x.open === false)
+    if (ownerMap.has(id) || !['task', 'bot', 'script'].includes(typeOf(id)) || doneTask) continue
     const owner = ownerOf(id)
     if (!owner) continue
     owners.push({ item: id, owner, at: made.get(id)!.at, by: 'system' })

@@ -445,9 +445,9 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .margin-link.none:not(.chosen) { visibility: hidden; }
 .bubble-row:hover .margin-link.none, .note-row:hover .margin-link.none { visibility: visible; }
 .margin-link.chosen { background: var(--color-gray-100); color: var(--ink); }
-/* A closed topic's margin, only while its row is hovered or a thread of it is open; one assigned to you, lit. */
-.margin-status.shut:not(:has(.chosen)) { visibility: hidden; }
-.bubble-row:hover .margin-status.shut, .note-row:hover .margin-status.shut { visibility: visible; }
+/* A topic nobody has: its margin only while its row is hovered or a thread of it is open. One you have, lit. */
+.margin-status.quiet:not(:has(.chosen)) { visibility: hidden; }
+.bubble-row:hover .margin-status.quiet, .note-row:hover .margin-status.quiet { visibility: visible; }
 .margin-status.yours .margin-link:not(.none) { background: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--ink); }
 .margin-status.yours .margin-link:not(.none):hover, .margin-status.yours .margin-link.chosen { background: color-mix(in srgb, var(--accent) 55%, transparent); }
 /* A row's other view, in the margin beside it (beneath it on a phone): the same view as the main one, in a column of

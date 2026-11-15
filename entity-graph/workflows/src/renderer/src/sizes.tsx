@@ -7,6 +7,7 @@
 
 import type { ReactNode } from 'react'
 import type { Catalog, ItemKind, ItemInfo } from '../../shared/types'
+import { isTask } from '../../shared/views'
 import { Markdown } from './components/ui/Markdown'
 import { useItemMenu } from './ItemMenu'
 import { itemInfoIcon } from './icons'
@@ -58,9 +59,9 @@ export type CardProps = { info: ItemInfo; find: string; catalog: Catalog; act: A
 
 /** Each type's card: what it shows in a chat. A type left out shows what it says (`message`, or its summary). */
 export const CARDS: Partial<Record<ItemKind, (p: CardProps) => ReactNode>> = {
-  // A topic with a status (a thing to be done) is a card that opens it; one with none (a comment) is what it says.
+  // A task (someone owns or has it) is a card that opens it; any other topic (a comment) is what it says.
   topic: ({ info: e, onOpen, find }) =>
-    typeof e.params.open === 'boolean' ? (
+    isTask(e) ? (
       <button data-ui className="link card-link" onClick={() => onOpen(e.id)}>
         <TaskCard info={e} find={find} />
       </button>

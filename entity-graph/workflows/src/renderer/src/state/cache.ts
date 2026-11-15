@@ -356,10 +356,10 @@ const patchCreate =
   (s) => {
     if (!s.overview || s.overview.items.some((i) => i.id === id)) return s
     const item: Item = {
-      id, type: 'topic', title, parentId, open: true, closed: false, owner: me, blockers: [], assignees: [], withYou: false, bot: null,
+      id, type: 'topic', title, parentId, open: null, closed: false, owner: me, blockers: [], assignees: [me], withYou: true, bot: null,
       since: at, createdAt: at, closedAt: null,
     }
-    const info: ItemInfo = { ...infoBase(id, parentId, at, me), owner: me, params: { text: title, open: true }, resolved: false, resolvedAt: null, resolvedBy: null, summary: title }
+    const info: ItemInfo = { ...infoBase(id, parentId, at, me), owner: me, assignees: [me], params: { text: title }, resolved: false, resolvedAt: null, resolvedBy: null, summary: title }
     const withIt: Shown = {
       ...s,
       overview: { ...s.overview, items: [...s.overview.items, item] },
@@ -404,8 +404,8 @@ function patchFor(w: Write, me: string): Patch {
       const [id] = a as [string]
       return patchItem(
         id,
-        (i) => ({ ...i, closed: true, open: i.open === null ? null : false, assignees: [], owner: null, withYou: false, closedAt: at }),
-        (i) => ({ ...i, closed: true, owner: null }),
+        (i) => ({ ...i, closed: true, open: i.type === 'topic' ? i.open : false, assignees: [], owner: null, withYou: false, closedAt: at }),
+        (i) => ({ ...i, closed: true, owner: null, assignees: [] }),
       )
     }
     case 'reopen': {
@@ -413,7 +413,7 @@ function patchFor(w: Write, me: string): Patch {
       return patchItem(
         id,
         // Whoever reopens it has it (engine `reopen`).
-        (i) => ({ ...i, closed: false, open: i.open === null ? null : true, closedAt: null, owner: me, assignees: [me], withYou: !i.blockers.length }),
+        (i) => ({ ...i, closed: false, open: i.type === 'topic' ? i.open : true, closedAt: null, owner: me, assignees: [me], withYou: !i.blockers.length }),
         (i) => ({ ...i, closed: false, owner: me, assignees: [me] }),
       )
     }

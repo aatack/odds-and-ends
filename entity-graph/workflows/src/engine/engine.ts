@@ -229,7 +229,7 @@ export class Engine extends EventEmitter {
       createdBy: r.created_by,
       createdAt: r.created_at,
       resolved: r.resolved,
-      closed: this.isClosed(r.id),
+      closed: this.done(r.id),
       resolvedAt: r.resolved_at,
       resolvedBy: r.resolved_by,
       cancelled: r.cancelled,
@@ -279,18 +279,32 @@ export class Engine extends EventEmitter {
     return r ? this.type(r.type).describe(params).split('\n')[0] : id
   }
 
-  /** Whether an item is closed: its status closed (anything can be closed). */
+  /**
+   * Whether an item is closed for good: a bot, script or person closed (gone). A topic never is: anyone may write in
+   * it, assign it or own it again. Whether a topic is still to be done is `done`.
+   */
   isClosed(id: string): boolean {
     const r = this.row(id)
     return !r || this.ended(r)
   }
 
   /**
-   * Whether an item is closed, from its row: `open: false`. A bot, script or person an older build cancelled (its
-   * `resolved`, never written now) reads as closed too: the data is kept as it is, not rewritten.
+   * Whether an item other than a topic is closed, from its row: `open: false`. A bot, script or person an older build
+   * cancelled (its `resolved`, never written now) reads as closed too: the data is kept as it is, not rewritten. A
+   * topic's `open` is only whether the notes draw it as a checkbox.
    */
   private ended(r: ItemRow): boolean {
-    return r.params.open === false || (r.type !== 'topic' && this.blocking(r.type) && r.resolved)
+    return r.type !== 'topic' && (r.params.open === false || (this.blocking(r.type) && r.resolved))
+  }
+
+  /**
+   * Whether an item is done, as the lists and views show it (`closed`): a topic when nobody owns it (it is no task left
+   * to close out) and nobody has it (nobody is to action it); anything else when it is closed.
+   */
+  done(id: string): boolean {
+    const r = this.row(id)
+    if (!r) return true
+    return r.type === 'topic' ? !this.owner(id) && !this.assignees(id).length : this.ended(r)
   }
 
   /** Who owns an item (its `owns` link), or null. */
@@ -319,12 +333,9 @@ export class Engine extends EventEmitter {
     this.emit('change')
   }
 
-  /** What someone owns that is still open: open topics, and bots and scripts that last. */
+  /** What someone owns: their tasks (topics they are to close out), and bots and scripts that last. */
   ownedBy(owner: string): string[] {
-    return this.store.owned(owner).filter((id) => {
-      const r = this.row(id)
-      return r && !this.isClosed(id) && (r.type !== 'topic' || r.params.open === true)
-    })
+    return this.store.owned(owner).filter((id) => this.row(id) && !this.isClosed(id))
   }
 
   /**
@@ -391,7 +402,7 @@ export class Engine extends EventEmitter {
       ...kids.map((k) => Math.max(k.created_at, k.resolved_at ?? 0)),
       ...assignees.map((a) => this.store.assignment(id, a)!.at),
     )
-    const closed = this.isClosed(id)
+    const closed = this.done(id)
     const bot = [...this.running.values()].find((run) => run.itemIds.includes(id))?.agentId ?? null
     return {
       id,
@@ -429,16 +440,12 @@ export class Engine extends EventEmitter {
    * anything else someone has; the bots and the people.
    */
   overview(viewer = this.me()): Overview {
-    const since = this.now() - 24 * 60 * MINUTE
     const held = new Set(this.store.allAssignments().map((a) => a.item))
     // What anyone owns is listed too (bots and scripts among it): a search page can be anyone's.
     for (const r of [...this.store.ofType('bot'), ...this.store.ofType('script')]) if (this.owner(r.id)) held.add(r.id)
     const items = [...this.store.items.values()]
-      .filter((r) =>
-        r.type === 'topic'
-          ? r.params.open === true || (r.params.open === false && (r.resolved_at ?? 0) > since) || (held.has(r.id) && r.params.open !== false)
-          : held.has(r.id) && !this.isClosed(r.id),
-      )
+      // A topic is listed while it is a task (someone owns it) or someone has it; anything else while someone has it.
+      .filter((r) => (r.type === 'topic' ? held.has(r.id) || !!this.owner(r.id) : held.has(r.id) && !this.isClosed(r.id)))
       .map((r) => this.toItem(r, viewer))
       // The most recently touched first: what is moving stays on top.
       .sort((a, b) => b.since - a.since)
@@ -545,7 +552,9 @@ export class Engine extends EventEmitter {
     const row = this.row(id)
     if (!row) throw new Error(`No item ${id}.`)
     if (STATE_KEYS.has(key) || OWN_KEYS.has(key)) throw new Error(`${key} can't be set this way.`)
-    // An item's status is how it stands too: closing one is `close`, reopening one `reopen`, and the rest of what each does.
+    // A topic's `open` is only its checkbox in the notes. Anything else's status is how it stands: closing one is
+    // `close`, reopening one `reopen`, and the rest of what each does.
+    if (key === 'open' && row.type === 'topic') return this.setOpen(id, (value as boolean | null | undefined) ?? null, actor)
     if (key === 'open') {
       if (value === false) return this.close(id, { actor })
       if (value === true && this.isClosed(id)) return this.reopen(id, actor)
@@ -665,6 +674,12 @@ export class Engine extends EventEmitter {
     if (!this.row(itemId)) throw new Error(`No item ${itemId}.`)
     if (on && this.holder(to) !== to) throw new Error(`Nobody is ${to}, to assign.`)
     if (!on && !this.assignees(itemId).includes(to)) return
+    // Given to someone, a topic nobody owns becomes a task: whoever gave it (a person; a bot's, its owner) is to close it out.
+    const r = this.row(itemId)!
+    if (on && r.type === 'topic' && !this.owner(itemId)) {
+      const owner = this.ownerFor(actor, r.parent_id)
+      if (owner) this.store.setOwner(itemId, owner, actor, this.now())
+    }
     this.store.setAssigned(itemId, to, on, actor, this.now())
     for (const run of this.running.values()) if (run.id === runId) run.assigned.add(itemId)
     this.emit('change')
@@ -672,7 +687,7 @@ export class Engine extends EventEmitter {
 
   /** Assigns an item to a person or a bot (by username, name or id), or takes it off them. */
   async assign(itemId: string, to: string, on: boolean, actor = this.me(), runId: string | null = null): Promise<void> {
-    if (this.must(itemId).closed && on) throw new Error('That item is closed.')
+    if (this.isClosed(this.must(itemId).id) && on) throw new Error('That item is closed.')
     this.setAssignee(itemId, on ? this.resolveAssignee(to) : (this.assignees(itemId).find((a) => a === to) ?? this.resolveAssignee(to)), on, actor, runId)
     // A script is run from inside a task's queue, so waiting for the queues to empty would wait for itself.
     if (actor !== 'script') await this.idle()
@@ -898,7 +913,7 @@ export class Engine extends EventEmitter {
       const r = id ? this.row(id) : undefined
       if (!id || !r) return String(id)
       if (r.type === 'user') return `@${this.actorName(id)}`
-      if ((r.type === 'topic' && r.params.open !== undefined) || r.type === 'bot' || r.type === 'script') return `"${this.title(id, r.params)}" [${id}]`
+      if ((r.type === 'topic' && (this.owner(id) || this.assignees(id).length)) || r.type === 'bot' || r.type === 'script') return `"${this.title(id, r.params)}" [${id}]`
       return `a ${r.type} [${id}]${r.parent_id ? ` in ${name(r.parent_id)}` : ''}`
     }
     const brief = (v: unknown) => {
@@ -1226,19 +1241,21 @@ export class Engine extends EventEmitter {
         data: null, memo: null, next_check_at: null, last_error: null,
         runs: 0, added_n: 0, resolved_n: 0,
       })
-      if (OWNED.includes(spec.type) && !spec.bare) {
+      // A topic given to someone as it is made is a task: owned (by whoever is to close it out) and theirs to action.
+      // Anything else a person or a bot may own (a bot, a script) is owned as it is made. A topic given to nobody (a
+      // comment, a note) is owned by nobody.
+      const given = topic && Array.isArray(assignees) && assignees.length && !spec.bare ? (assignees as string[]) : []
+      if (!spec.bare && (topic ? given.length > 0 : OWNED.includes(spec.type))) {
         const owner = this.ownerFor(createdBy, parentId)
         if (owner) this.store.setOwner(id, owner, createdBy, at)
       }
       if (topic) {
         if (Array.isArray(comments) && comments.length) this.addNow(id, comments as ItemSpec[], createdBy, id, 'comments')
         if (Array.isArray(notes) && notes.length) this.addNow(id, notes as ItemSpec[], createdBy, id, 'notes')
-        // A new open topic goes to those given; else, made by a person, to them; else (a bot made it) to nobody.
-        const to = Array.isArray(assignees) && assignees.length ? (assignees as string[]) : params.open === true && this.isUser(createdBy) && !spec.bare ? [createdBy] : []
-        for (const a of to) this.setAssignee(id, a, true, createdBy)
+        for (const a of given) this.setAssignee(id, a, true, createdBy)
       }
-      // An open topic made in another is pinned to it (a subtask), as is anything added with `pin`.
-      if (pinTo && (spec.pin || (topic && params.open === true && via === 'comments' && this.row(pinTo)?.type === 'topic'))) this.store.pin(pinTo, id, createdBy, at)
+      // A task made in another topic's comments is pinned to it (a subtask), as is anything added with `pin`.
+      if (pinTo && (spec.pin || (given.length > 0 && via === 'comments' && this.row(pinTo)?.type === 'topic'))) this.store.pin(pinTo, id, createdBy, at)
     })
     // Whatever a topic's text links to is pulled in, as an item whose id is its URL (a Slack message or channel, or a
     // link), in no topic: made the first time, so `[url]()` (or the URL itself) opens it. It shows in no chat; pin it
@@ -1286,7 +1303,10 @@ export class Engine extends EventEmitter {
 
   // ---- people ----
 
-  /** A new open topic, in `parentId` or in none, with comments to start it off. */
+  /**
+   * A new task: a topic in `parentId` or in none, with comments to start it off, given to `assignees` (else to whoever
+   * made it, a person) and so owned.
+   */
   async create(
     title: string,
     opts: { parentId?: string | null; key?: string; specs?: ItemSpec[]; assignees?: string[]; actor?: string; author?: Author; id?: string } = {},
@@ -1294,9 +1314,11 @@ export class Engine extends EventEmitter {
     const author = opts.author ?? 'human'
     // Made already (the same change sent again): it is that one.
     if (opts.id && this.row(checkedId(opts.id))) return opts.id
-    const params = { text: title, open: true, ...(opts.key ? { key: opts.key } : {}), ...(opts.specs ? { comments: opts.specs } : {}), ...(opts.assignees ? { assignees: opts.assignees } : {}) }
+    const maker = author === 'bot' ? 'bot' : (opts.actor ?? this.me())
+    const assignees = opts.assignees?.length ? opts.assignees : this.isUser(maker) ? [maker] : []
+    const params = { text: title, ...(opts.key ? { key: opts.key } : {}), ...(opts.specs ? { comments: opts.specs } : {}), ...(assignees.length ? { assignees } : {}) }
     const [spec] = this.prepare([{ type: 'topic', params, ...(opts.id ? { id: opts.id } : {}) }], author)
-    const [id] = this.add(opts.parentId ?? null, [spec], author === 'bot' ? 'bot' : (opts.actor ?? this.me()))
+    const [id] = this.add(opts.parentId ?? null, [spec], maker)
     await this.idle()
     return id ?? null
   }
@@ -1313,7 +1335,7 @@ export class Engine extends EventEmitter {
     const assignTo = presetId.startsWith('assign:') ? presetId.slice('assign:'.length) : null
     const preset = this.presets.find((p) => p.id === (assignTo ? 'note' : presetId))
     if (!preset) throw new Error(`No preset ${presetId}.`)
-    if (this.must(itemId).closed) throw new Error('This is closed.')
+    if (this.isClosed(this.must(itemId).id)) throw new Error('This is closed.')
     const live = (id: string) => this.holder(id) === id
     const named = [...new Set([...(assignTo ? [this.resolveAssignee(assignTo)] : []), ...refsIn(text).filter(live)])].filter((id) => id !== actor)
     // Written in a bot's own chat, it goes to the bot (as any item goes to whoever is named in what is sent).
@@ -1505,15 +1527,30 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * Opens a closed item again: `open: true` (only if it is `false`), owned by and assigned to whoever reopened it. Who
-   * had it before is in the log, not brought back. A person's action: agents aren't given it as a tool.
+   * Once, for a store from before tasks were what someone owns: an older build made whoever wrote a topic its owner, so
+   * every comment and note was owned. Takes the owner off each topic that was no task then (never given a status, its
+   * `open`, and nobody has it), so only tasks are owned, and the lists stay as they were. Answers how many. A person's.
+   */
+  async disownComments(actor = this.me()): Promise<number> {
+    const was = this.store.ofType('topic').filter((r) => typeof r.params.open !== 'boolean' && this.owner(r.id) && !this.assignees(r.id).length)
+    this.store.batch(() => {
+      for (const r of was) this.store.setOwner(r.id, null, actor, this.now())
+    })
+    this.emit('change')
+    return was.length
+  }
+
+  /**
+   * Opens a done item again: owned by and assigned to whoever reopened it (a topic becomes their task again; anything
+   * else closed is `open: true` again). Who had it before is in the log, not brought back. A person's action: agents
+   * aren't given it as a tool.
    */
   async reopen(itemId: string, actor = this.me()): Promise<void> {
     const row = this.row(itemId)
     if (!row) throw new Error(`No item ${itemId}.`)
-    if (!this.isClosed(itemId)) return
+    if (!this.done(itemId)) return
     this.store.batch(() => {
-      if (row.params.open === false) this.store.setOpen(itemId, true, actor, this.now())
+      if (row.type !== 'topic' && row.params.open === false) this.store.setOpen(itemId, true, actor, this.now())
       // What an older build cancelled (its `resolved`) is open again only by clearing that.
       else if (row.resolved && row.type !== 'topic' && this.blocking(row.type)) this.store.reopenItem(itemId, actor, this.now())
       if (this.isUser(actor)) {
@@ -1624,19 +1661,20 @@ export class Engine extends EventEmitter {
   }
 
   /**
-   * Closes any item, and that is all it does: its owner and its assignees are taken off it, and its `open` is `false`.
-   * Nothing in it, nothing it holds and nobody's work is touched beyond that: a closed bot or script has no owner, so
-   * nothing runs it (one running now is stopped).
+   * Closes any item, and that is all it does: its owner and its assignees are taken off it (a topic is then no task:
+   * done); anything but a topic is also `open: false` (a topic's `open` is only its checkbox in the notes). Nothing in
+   * it, nothing it holds and nobody's work is touched beyond that: a closed bot or script has no owner, so nothing runs
+   * it (one running now is stopped).
    */
   async close(itemId: string, opts: { actor?: string } = {}): Promise<void> {
     const actor = opts.actor ?? this.me()
     const row = this.row(itemId)
     if (!row) throw new Error(`No item ${itemId}.`)
-    if (this.isClosed(itemId)) return
+    if (this.done(itemId)) return
     this.store.batch(() => {
       for (const a of this.assignees(itemId)) this.setAssignee(itemId, a, false, actor)
       if (this.owner(itemId)) this.store.setOwner(itemId, null, actor, this.now())
-      this.store.setOpen(itemId, false, actor, this.now())
+      if (row.type !== 'topic') this.store.setOpen(itemId, false, actor, this.now())
     })
     if (row.type === 'bot' && this.running.has(itemId)) this.onCancel(itemId)
     this.emit('change')

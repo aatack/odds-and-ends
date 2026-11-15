@@ -11,18 +11,20 @@ const firstItems = z.array(z.object({ type: z.string(), params: z.record(z.unkno
 
 export const TOPIC_DOC =
   'A topic: what is said, a thing to be done, or a note in a tree; one type for all of them. `text` is what it says (its first line is ' +
-  'its name). `open` is its status: true while open (a thing to be done, or a checkbox), false once closed, left out for none (a comment). ' +
+  'its name). It is a task while someone owns it (who is to close it out), and blocked while someone has it (its `assignees`: who is ' +
+  'to action it now); closing it takes both off. `open` only makes it a checkbox in a tree of notes (true unticked, false ticked): open ' +
+  'notes mark what still needs working on. ' +
   'It holds two lists: its comments (its chat: what is said in it, in order) and its notes (a tree of topics); `display` says which its ' +
-  'view shows. What you add in a topic goes in its comments. Pinned items show beside it. Its owner (whoever made it, if a person; else the ' +
-  "owner of the topic it is in) is who it goes back to. To split work off, add an open topic (`open: true`) with its first comments in " +
-  '`comments` and who has it in `assignees`. The old types `task` (title, items) and `note` (text) are taken as topics.'
+  'view shows. What you add in a topic goes in its comments. Pinned items show beside it. Its owner is who it goes back to: given to ' +
+  "someone (as it is made, or later), a topic nobody owned is owned by whoever gave it (a bot's: its owner). To split work off, add a " +
+  'topic with its first comments in `comments` and who has it in `assignees`. The old types `task` (title, items) and `note` (text) are taken as topics.'
 
 export const topic: ItemType = {
   type: 'topic',
   description: TOPIC_DOC,
   params: {
     text: z.string().describe('What it says; its first line is its name.'),
-    open: z.boolean().optional().describe('Its status: true while open, false once closed; left out, none.'),
+    open: z.boolean().optional().describe('A checkbox in a tree of notes: true unticked, false ticked; left out, none. Nothing else.'),
     section: z.boolean().optional().describe('A heading, in a tree of notes.'),
     display: z.enum(['comments', 'notes']).optional().describe('What its view shows: its comments (a chat; the default) or its notes (a tree).'),
     comments: firstItems.optional().describe('Comments to put in it as it is made. Not kept in its values.'),

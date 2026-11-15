@@ -49,9 +49,9 @@ To find other work, use items_waiting_on (a username, a bot's name, or a blocker
 
 ## 2. Read what you need
 
-Everything you need to decide is in the item, or pinned beside it. Most items are **topics**. A topic is what people write: something said, a thing to do, or a note in a tree. The first line of its text is its name. A topic is open (a thing to do, or a checkbox), closed, or neither (a comment).${say(
+Everything you need to decide is in the item, or pinned beside it. Most items are **topics**. A topic is what people write: something said, a thing to do, or a note in a tree. The first line of its text is its name. A topic is a task while someone owns it (they close it out), and blocked while someone has it (they action it now). A topic nobody owns or has is a comment or a note.${say(
   '',
-  ` In the tools, an item is anything in the database. Its status is \`open\`: true when open, false when closed, and not there for neither.`,
+  ` In the tools, an item is anything in the database. A topic's \`open\` only makes it a checkbox in a tree of notes: true unticked, false ticked.`,
 )}
 
 A topic has three places to read:
@@ -83,14 +83,14 @@ Many types of item can be pinned or added to a topic: links, pull requests, file
 Do the work in the app when you can. Then the next person can see what you did.
 
 - **Write in the chat.** ${say(
-  `Type in the box at the bottom, and press \`Enter\` to send. Press \`Tab\` to add a different thing: an open topic, a script, and so on. You can also speak: the record button uses [Deepgram](#integrations).`,
-  `Use add_items on the topic to add a comment (a topic with only text), a script, or an open topic.`,
+  `Type in the box at the bottom, and press \`Enter\` to send. Press \`Tab\` to add a different thing: a script, and so on. You can also speak: the record button uses [Deepgram](#integrations).`,
+  `Use add_items on the topic to add a comment (a topic with only text), a script, or a task (a topic with \`assignees\`).`,
 )}
 - **Change the notes.** ${say(
-  `In the tree, \`Enter\` adds a note, \`?\` adds an open note, and \`/\` adds a heading. \`e\` edits a note. \`w\` and \`s\` move it up and down.`,
+  `In the tree, \`Enter\` adds a note, \`?\` adds a checkbox (open notes mark what still needs working on), and \`/\` adds a heading. \`e\` edits a note. \`w\` and \`s\` move it up and down.`,
   `Use add_items with \`via: notes\` to add to the tree. Write a plan or a write-up as notes, one point to each note, and set the topic's display to notes. Then say what you did in its comments.`,
 )}
-- **Split off work.** Add an open topic in the chat. It is pinned to the topic as you make it. It does not block the topic.${say('', ' With `detached: true`, it goes in no topic.')}
+- **Split off work.** Add a topic in the chat, given to someone (its assignees). It is pinned to the topic as you make it. It does not block the topic.${say('', ' With `detached: true`, it goes in no topic.')}
 - **Pin what will help later.** Attach the item itself, not only a mention of it. ${say(
   `Right-click any item and choose *Pin to*.`,
   `Use the pin action, or \`pin: true\` on an item in add_items. get_item lists an item's pins, and where it is pinned (pinnedIn).`,
@@ -140,7 +140,7 @@ The app runs the bots and scripts that the person signed in owns, and the ones t
 **Close it** when there is nothing more to do. ${say(
   `Press *Close* in its right pane, or press \`Ctrl+Enter\` two times in its chat.`,
   `Use close_item, only when a person asks.`,
-)} Closing removes its owner and all its assignees, and sets open to false. Nothing in it changes. A closed bot or script has no owner, so nothing runs it. ${say(
+)} Closing removes its owner and all its assignees: a topic is then no task. Nothing in it changes, nor a checkbox. A closed bot or script has no owner, so nothing runs it. ${say(
   `*Reopen* opens it again, and makes you its owner and assignee.`,
   `Only a person reopens an item.`,
 )}
@@ -236,7 +236,7 @@ Everything in the app is an item, and every item has a type. What is the same fo
 
 ## The types
 
-- **topic**: what people write: something said (a comment), a thing to be done (open), a note in a tree. It opens on its comments, unless its display says.
+- **topic**: what people write: something said (a comment), a thing to be done (a task: someone owns it), a note in a tree. It opens on its comments, unless its display says.
 - **bot**: a Claude session with a name and instructions, working on what is assigned to it. It opens on its assignments.
 - **script**: a bot without a model: JavaScript, run on what is assigned to it, or on a press. It opens on its comments.
 - **user**: a person who signs in, by username. Things are assigned to people as to bots.
@@ -246,7 +246,7 @@ Everything in the app is an item, and every item has a type. What is the same fo
 - **slack_message**: a Slack message, from its link, shown with its thread.
 - **slack_channel**: a Slack channel over a stretch of time.
 
-A bot, a script and a person stay open for as long as they last (removing one closes it); every other item is done as it is added, and a topic is open only when it says so.
+A bot, a script and a person stay open for as long as they last (removing one closes it); every other item is done as it is added, and a topic is a task only while someone owns or has it.
 
 ## What can be done to each
 

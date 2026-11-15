@@ -247,22 +247,24 @@ await settle()
 const kid = engine.children(parent).find((e) => e.type === 'topic')!.id
 assert.ok(item(kid).closed)
 // Closing a task leaves the tasks in it as they are.
-const [loose] = await engine.addItems(parent, [{ type: 'task', params: { title: 'Still open' } }])
+const [loose] = await engine.addItems(parent, [{ type: 'topic', params: { text: 'Still open', assignees: [engine.me()] } }])
 await engine.close(parent)
 assert.ok(item(parent).closed && !item(loose).closed)
 await engine.close(loose)
-// A bot can also add an item that sits in no item: it blocks nothing, and it is nobody's unless the bot says.
+// A bot can also add an item that sits in no item: it blocks nothing, and it is nobody's unless the bot says (given to
+// nobody, it is no task: not in the lists).
 {
   const host = (await engine.create('Host'))!
   behaviours.push(async () => out({ item: host, items: [{ type: 'task', params: { title: 'Unrelated', detached: true } }] }))
   await toBot(host, 'x')
   await settle()
-  const loose = engine.overview().items.find((i) => i.title === 'Unrelated')!
+  const loose = engine.get([...engine.store.items.values()].find((r) => r.params.text === 'Unrelated')!.id)!
   assert.equal(loose.parentId, null)
   assert.deepEqual(loose.assignees, [], 'a bot decides who has what it makes')
+  assert.equal(loose.owner, null)
+  assert.ok(!engine.overview().items.some((i) => i.id === loose.id))
   assert.ok(item(host).withYou)
   await engine.close(host)
-  await engine.close(loose.id)
 }
 
 // A bot can say something in a task it doesn't have: by its update, or by add_items. Who has that task is left alone.
@@ -351,7 +353,7 @@ await engine.close(loose)
   await engine.close(t2)
 }
 
-// Closing is plain: owner and assignees off, open false. Reopening sets open true, owned by and assigned to who did it.
+// Closing is plain: owner and assignees off (a topic's open, its checkbox, untouched). Reopening: owned by and assigned to who did it.
 {
   const t = (await engine.create('Reopen me'))!
   await engine.assign(t, threepio, true)
@@ -364,7 +366,7 @@ await engine.close(loose)
   assert.ok(!item(t).closed && item(t).withYou)
   assert.deepEqual([engine.owner(t), engine.assignees(t)], [engine.me(), [engine.me()]], 'whoever reopened it has it; not who had it before')
   assert.equal(engine.children(t).length, said, 'reopening says nothing')
-  assert.equal((await engine.inspect(t)).values.open, true)
+  assert.equal((await engine.inspect(t)).values.open, undefined, 'a task has no checkbox unless given one')
   await engine.close(t)
 }
 
@@ -388,10 +390,11 @@ await engine.close(loose)
   assert.deepEqual(engine.info(made)!.pins, [said])
   await engine.pin(made, [said], false)
   assert.deepEqual([engine.info(made)!.pins, engine.info(said)!.pinnedIn], [[], []])
-  // A subtask is pinned to the task it is made in; anything added with `pin` too, and a link may sit in no task.
+  // A subtask (a topic given to someone) is pinned to the task it is made in; anything added with `pin` too, and a link
+  // may sit in no task.
   const [sub, pr] = await engine.addItems(
     from,
-    [{ type: 'task', params: { title: 'Sub' } }, { type: 'link', params: { url: 'https://github.com/o/r/pull/1' }, pin: true }],
+    [{ type: 'task', params: { title: 'Sub', assignees: [engine.me()] } }, { type: 'link', params: { url: 'https://github.com/o/r/pull/1' }, pin: true }],
     `bot:${threepio}`,
     'bot',
   )
@@ -427,16 +430,20 @@ await engine.close(loose)
   assert.equal(engine.info(a)!.parentId, null)
   await engine.setValue(a1, 'open', false, 'alex')
   assert.equal(engine.info(a1)!.params.open, false)
-  // The notes view's checkbox: made bare, nobody owns it or has it; its status set alone keeps who owns and has it.
+  // A checkbox (open) is only that: one given to nobody is nobody's, and no task; ticking a task's keeps who owns and has it.
   const me = engine.me()
-  const [box] = await engine.addItems(root, [{ type: 'topic', params: { text: 'Box', open: true }, bare: true }], me, 'human', 'notes')
-  assert.deepEqual([engine.owner(box), engine.assignees(box)], [null, []])
-  const [owned] = await engine.addItems(root, [{ type: 'topic', params: { text: 'Owned', open: true } }], me, 'human', 'notes')
+  const [box] = await engine.addItems(root, [{ type: 'topic', params: { text: 'Box', open: true } }], me, 'human', 'notes')
+  assert.deepEqual([engine.owner(box), engine.assignees(box), engine.info(box)!.closed], [null, [], true])
+  const [owned] = await engine.addItems(root, [{ type: 'topic', params: { text: 'Owned', open: true, assignees: [me] } }], me, 'human', 'notes')
   assert.deepEqual([engine.owner(owned), engine.assignees(owned)], [me, [me]])
-  await engine.setOpen(owned, false, me)
-  assert.deepEqual([engine.info(owned)!.params.open, engine.isClosed(owned), engine.owner(owned), engine.assignees(owned)], [false, true, me, [me]])
+  await engine.setValue(owned, 'open', false, me)
+  assert.deepEqual([engine.info(owned)!.params.open, engine.info(owned)!.closed, engine.owner(owned), engine.assignees(owned)], [false, false, me, [me]])
   await engine.setOpen(owned, null, me)
-  assert.deepEqual([engine.info(owned)!.params.open, engine.isClosed(owned), engine.owner(owned)], [undefined, false, me])
+  assert.deepEqual([engine.info(owned)!.params.open, engine.info(owned)!.closed, engine.owner(owned)], [undefined, false, me])
+  // Given to someone, a topic nobody owned becomes a task, owned by whoever gave it.
+  await engine.assign(box, threepio, true, me)
+  assert.deepEqual([engine.owner(box), engine.info(box)!.closed], [me, false])
+  await engine.close(box)
   await engine.moveItem(box, null, me)
   await engine.moveItem(owned, null, me)
   // Anything else in a note is a leaf of its tree.
@@ -992,7 +999,7 @@ await engine.close(bad)
   await engine.close(u)
   await engine.rename(t, '  Renamed for Sam ')
   assert.equal(item(t).title, 'Renamed for Sam')
-  assert.deepEqual((await engine.inspect(t)).values, { type: 'topic', text: 'Renamed for Sam', open: true }, 'a topic keeps its text and status')
+  assert.deepEqual((await engine.inspect(t)).values, { type: 'topic', text: 'Renamed for Sam' }, 'a topic keeps its text')
   await engine.close(t)
 }
 
@@ -1195,22 +1202,32 @@ assert.deepEqual(unexpected, [], 'no bot ran that no test expected')
   ])
   assert.deepEqual(made.sort(), [t, c].sort())
   assert.equal(engine.info(c)!.parentId, t)
-  assert.equal(engine.owner(t), engine.me(), 'what a person makes is theirs')
+  assert.deepEqual([engine.owner(t), engine.assignees(t)], [null, []], 'a topic given to nobody is nobody\'s, open (a checkbox) or not')
   await engine.write([{ link: { source: t, destination: threepio, link_type: 'assignees' } }, { link: { source: t, destination: c, link_type: 'pins' } }])
-  assert.deepEqual([engine.assignees(t), engine.info(t)!.pins], [[engine.me(), threepio], [c]], 'a new open topic is its maker\'s too')
+  assert.deepEqual([engine.owner(t), engine.assignees(t), engine.info(t)!.pins], [engine.me(), [threepio], [c]], 'given to someone, it is a task: whoever gave it owns it')
   assert.deepEqual(await engine.write([{ set: { entity: t, key: 'type', value: 'topic' } }]), [], 'making it again makes nothing')
   await engine.write([
     { link: { source: engine.me(), destination: t, link_type: 'owns', sort: 'removed' } },
     { link: { source: t, destination: threepio, link_type: 'assignees', sort: 'removed' } },
-    { link: { source: t, destination: engine.me(), link_type: 'assignees', sort: 'removed' } },
-    { set: { entity: t, key: 'open', value: false } },
   ])
-  assert.ok(engine.isClosed(t))
+  assert.ok(engine.info(t)!.closed)
   assert.deepEqual([engine.owner(t), engine.assignees(t)], [null, []])
   await assert.rejects(engine.write([{ set: { entity: t, key: 'resolved', value: true } }]), /can't be written/)
   await assert.rejects(engine.write([{ set: { entity: 'wf.setting.x', key: 'value', value: 1 } }]), /not an item/)
   await assert.rejects(engine.write([{ set: { entity: t, key: 'type', value: null } }]), /never archived/)
   await assert.rejects(engine.write([{ link: { source: t, destination: c, link_type: 'contains' } }]), /No contains links/)
+}
+
+// A store from before: whoever wrote a topic owned it. disown_comments takes the owner off those that were no task.
+{
+  const me = engine.me()
+  const [said, task, held] = await engine.addItems(null, [{ type: 'topic', params: { text: 'Said' } }, { type: 'topic', params: { text: 'A task', open: true } }, { type: 'topic', params: { text: 'Held' } }], me)
+  for (const id of [said, task, held]) engine.store.setOwner(id, me, me, clock)
+  engine.setAssignee(held, threepio, true, me)
+  assert.match(String(await engine.callAction('disown_comments', {}, { engine, author: 'human', actor: me, itemId: null, runId: null })), /Took the owner off \d+ topics/)
+  assert.deepEqual([engine.owner(said), engine.owner(task), engine.owner(held)], [null, me, me])
+  await engine.close(task)
+  await engine.close(held)
 }
 
 mcp.close()

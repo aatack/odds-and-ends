@@ -115,15 +115,18 @@ function infoOf(view: EntityView, id: string): ItemInfo | undefined {
   const place = placeOf(view, id)
   // Made when (and by whom) it was put where it sits.
   const made = place && view.get(id)?.links[key([place.via, 'inbound'])]?.[0]?.event
-  const closed = type === 'topic' ? x.open === false : x.resolved === true
+  const owner = others(view, id, ['owns', 'inbound'])[0] ?? null
+  const assignees = others(view, id, ['assignees', 'outbound'])
+  // Done as the engine says (`done`): a topic nobody owns or has; anything else closed.
+  const closed = type === 'topic' ? !owner && !assignees.length : x.open === false || x.resolved === true
   const summary = describe(type, params)
   return {
-    id, parentId: place?.parent ?? null, via: place?.via ?? null, owner: others(view, id, ['owns', 'inbound'])[0] ?? null, type, params,
+    id, parentId: place?.parent ?? null, via: place?.via ?? null, owner, type, params,
     createdBy: made?.author ?? '', createdAt: made?.timestamp ?? 0, resolved: closed, closed, resolvedAt: null, resolvedBy: null,
     cancelled: false, data: null, actor: made?.author ?? '', summary, message: type === 'topic' ? summary : null,
     nextCheckAt: null, lastError: null, runs: 0, pins: others(view, id, ['pins', 'outbound']), pinnedIn: others(view, id, ['pins', 'inbound']),
     comments: others(view, id, ['comments', 'outbound']).length, notes: others(view, id, ['notes', 'outbound']).length,
-    assignees: others(view, id, ['assignees', 'outbound']),
+    assignees,
   }
 }
 

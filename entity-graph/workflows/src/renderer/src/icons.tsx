@@ -2,6 +2,7 @@
 // rest come from it too so that they match.
 import { Bot, File, Search, Check, GitPullRequest, Hash, Layers, Link, MessageCircle, Settings, ShieldCheck, SquareCode, User, type LucideIcon } from 'lucide-react'
 import type { ItemKind, Item, ItemInfo } from '../../shared/types'
+import { isTask } from '../../shared/views'
 
 /** One icon an item type. */
 export const TYPE_ICON: Record<ItemKind, LucideIcon> = {
@@ -66,11 +67,11 @@ function whoIcon(by: string): [LucideIcon, string] {
 }
 
 /**
- * The one icon for an item, wherever it is drawn: a topic with no status (a comment, a note) is whoever said (or ran)
- * it; anything else is its type. The chat's pictures, the blocker rows and the view header all use this.
+ * The one icon for an item, wherever it is drawn: a topic that is no task (a comment, a note: `isTask`) is whoever said
+ * (or ran) it; anything else is its type. The chat's pictures, the blocker rows and the view header all use this.
  */
-export function itemInfoIcon(e: { type: ItemKind; createdBy: string; params?: Record<string, unknown> }): [LucideIcon, string] {
-  return e.type === 'topic' && typeof e.params?.open !== 'boolean' ? whoIcon(e.createdBy) : [TYPE_ICON[e.type], TYPE_NAME[e.type]]
+export function itemInfoIcon(e: { type: ItemKind; createdBy: string; owner?: string | null; assignees?: string[] }): [LucideIcon, string] {
+  return e.type === 'topic' && !isTask(e) ? whoIcon(e.createdBy) : [TYPE_ICON[e.type], TYPE_NAME[e.type]]
 }
 
 /** An item's icon, inline. */

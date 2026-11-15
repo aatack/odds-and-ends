@@ -12,6 +12,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Agent, Item, ItemInfo } from '../shared/types'
 import { ANYONE, cardText, type Who } from './views'
+import { isTask } from '../shared/views'
 import type { Engine, PromptItem } from './engine'
 import { botOutputSchema } from './schema'
 import { MAX_BOTS } from './settings'
@@ -155,7 +156,7 @@ export function promptFor(items: PromptItem[], who?: Who): string {
  * brackets, after who added it, with its id (a topic with a status, an approval, a file), to refer to.
  */
 function promptLine(e: ItemInfo, who: Who = ANYONE): string {
-  const comment = e.type === 'topic' && typeof e.params.open !== 'boolean'
+  const comment = e.type === 'topic' && !isTask(e)
   if (comment && who.person(e.createdBy)) return `${who.name(e.createdBy)}: ${cardText(e)}`
   return `[${who.name(e.createdBy)}: ${cardText(e, { ids: !comment })}]`
 }

@@ -11,8 +11,8 @@ import { previewAtom } from './views'
  * (in a chat) or comments (in a tree), and pins, each as an icon with how many that opens them beside it (pressed again,
  * shuts them); and who else has it, as their pictures (lit while a bot works on it). So a tree's sections can be handed
  * to bots and watched from the tree, and what is pinned to a note found from it. With none yet, an icon shows only while
- * its row is hovered (or its thread is open), to start them there. A closed topic's margin shows only while hovered (or
- * a thread of it is open), leaving what still needs attention; one assigned to you has its icons lit.
+ * its row is hovered (or its thread is open), to start them there. Only a topic someone has shows its margin unhovered
+ * (hovered, or a thread of it open, any does), leaving what someone is to action; one you have has its icons lit.
  */
 export function Margin({ info, other }: { info: ItemInfo; other: 'comments' | 'notes' }) {
   const o = useContext(OverviewContext)
@@ -42,7 +42,7 @@ export function Margin({ info, other }: { info: ItemInfo; other: 'comments' | 'n
     )
   }
   return (
-    <span className={`margin-status ${info.closed ? 'shut' : ''} ${yours ? 'yours' : ''}`} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+    <span className={`margin-status ${info.assignees?.length ? '' : 'quiet'} ${yours ? 'yours' : ''}`} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
       {link(other)}
       {link('pins')}
       {others.map((a) => {
