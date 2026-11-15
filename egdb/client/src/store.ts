@@ -10,8 +10,10 @@ import {
   emptyCache,
   entitiesOf,
   groupsOf,
+  inverseOf,
   loadedFromWalk,
   mergeLoaded,
+  pinTimestamps,
   viewOf,
   type CacheState,
   type EntityView,
@@ -20,7 +22,20 @@ import {
   type PendingWrite,
 } from './cache.js'
 import type { EgdbClient } from './client.js'
-import type { BranchId, Direction, EntityId, Filter, FindOptions, FindOrder, LinkPair, Op, Path, WriteResult } from './types.js'
+import {
+  UNDO_WINDOW_MS,
+  type BranchId,
+  type Direction,
+  type EntityId,
+  type Filter,
+  type FindOptions,
+  type FindOrder,
+  type LinkPair,
+  type Op,
+  type Path,
+  type UndoOutcome,
+  type WriteResult,
+} from './types.js'
 import { pathKey, type WalkQuery } from './walk.js'
 
 export type JotaiStore = ReturnType<typeof createStore>
@@ -36,6 +51,17 @@ export interface EgdbOptions {
   preloadSteps?: number
   /** Called with every failed load or write (a write's promise rejects too). */
   onError?: (error: unknown) => void
+}
+
+/** One of this client's batches, as undo and redo keep it. */
+interface Batch {
+  ops: Op[]
+  /** Ops that put back what the batch replaced, as far as the cache knew: undo shows them at once. */
+  inverse: Op[]
+  /** The local clock when it was written. */
+  at: number
+  /** Settles with the server's answer (its seqs and timestamp), or rejects if the write failed. */
+  sent: Promise<WriteResult>
 }
 
 /** One `useFind` query's results so far. */
@@ -75,12 +101,14 @@ export class Egdb {
   private readonly preloads = new Map<string, 'running' | 'done'>()
   private queued: { ids: Set<EntityId>; groups: Map<GroupKey, LinkPair> } | null = null
   private pendingId = 0
-  /** This client's confirmed batches, oldest first: the ops sent and their sequence IDs. */
-  private done: { ops: Op[]; first: number; last: number }[] = []
-  /** Batches that undo removed, newest last: redo sends them again. */
-  private undone: Op[][] = []
-  /** Writes not yet confirmed: undo waits for them, so it removes the right batch. */
+  /** This client's batches that undo can reach, oldest first, from the moment they are written. */
+  private done: Batch[] = []
+  /** Batches that undo took off, newest last: redo sends them again. */
+  private undone: Batch[] = []
+  /** Writes not yet confirmed: an undo waits for the ones before it, so it removes the right batch. */
   private inflight = new Set<Promise<unknown>>()
+  /** The undos sent to the server, in order: a write waits for them, so it cannot land before them. */
+  private undoing: Promise<unknown> = Promise.resolve()
 
   constructor(options: EgdbOptions) {
     this.client = options.client
@@ -220,22 +248,39 @@ export class Egdb {
     this.store.set(this.undoAtom, { undo: this.done.length, redo: this.undone.length })
   }
 
-  private async send(batch: Op[]): Promise<WriteResult> {
+  /**
+   * Show `batch` at once and send it. `wire` gives the ops to send, when they
+   * differ from the ones shown (a redo's links, fixed at the server's time).
+   */
+  private async send(batch: Op[], wire: () => Promise<Op[]> = async () => batch): Promise<WriteResult> {
     const pending: PendingWrite = { id: ++this.pendingId, ops: batch, timestamp: Date.now() }
     const drop = (state: CacheState) => state.pending.filter((p) => p !== pending)
+    const inverse = inverseOf(this.view(), batch)
     this.store.set(this.cacheAtom, (state) => ({ ...state, pending: [...state.pending, pending] }))
+    // After the undos already asked for: they must reach the server first.
+    const sent = this.undoing.then(async () =>
+      this.client.write({ branch: this.branch, author: this.author, ops: await wire() }),
+    )
+    const entry: Batch = { ops: batch, inverse, at: pending.timestamp, sent }
+    // Undoable at once: an undo before the server answers waits for the answer.
+    this.done.push(entry)
+    this.syncUndo()
+    const forget = () => {
+      const at = this.done.indexOf(entry)
+      if (at >= 0) this.done.splice(at, 1)
+      this.syncUndo()
+    }
     let result: WriteResult
     try {
-      result = await this.client.write({ branch: this.branch, author: this.author, ops: batch })
+      result = await sent
     } catch (error) {
+      forget()
       this.store.set(this.cacheAtom, (state) => ({ ...state, pending: drop(state) }))
       this.fail(error)
       throw error
     }
-    if (result.first_seq <= result.last_seq) {
-      this.done.push({ ops: batch, first: result.first_seq, last: result.last_seq })
-      this.syncUndo()
-    }
+    // No events of its own (the server wrote it some other way): nothing to undo.
+    if (result.first_seq > result.last_seq) forget()
     await this.readBack(batch, () => drop, pending.timestamp)
     return result
   }
@@ -291,36 +336,88 @@ export class Egdb {
   }
 
   /**
-   * Undo this author's newest batch on the server, then read back what it
-   * touched. It is not optimistic: the browser does not know the values the
-   * batch replaced. When the batch is one this client wrote, `redo` can send
-   * it again.
+   * Undo this client's newest batch. It is optimistic: the views show what the
+   * batch replaced (as the cache knew it when the batch was written) at once,
+   * and `redo` can send it again at once. Then, after the writes before it,
+   * the server removes that batch, named by its first seq, so a newer batch of
+   * the same author from elsewhere is never removed instead. If the server
+   * refuses, the batch shows again and the promise rejects. `null`: nothing to
+   * undo (none, too old, or a write that never landed).
    */
-  async undo() {
-    await Promise.allSettled([...this.inflight])
-    const outcome = await this.client.undo(this.branch, this.author)
-    if (!outcome) return outcome
-    const at = this.done.findIndex((d) => d.first === outcome.removed[0])
-    if (at < 0) {
-      // Another client's batch, with the same author: what it touched is not known here.
-      await this.refresh()
-      return outcome
-    }
-    const [batch] = this.done.splice(at, 1)
-    this.undone.push(batch!.ops)
+  undo(): Promise<UndoOutcome | null> {
+    const entry = this.done[this.done.length - 1]
+    // The server would refuse it; don't show an undo that cannot happen.
+    if (!entry || Date.now() - entry.at >= UNDO_WINDOW_MS) return Promise.resolve(null)
+    this.done.pop()
+    this.undone.push(entry)
     this.syncUndo()
-    await this.readBack(batch!.ops, () => (state) => state.pending)
-    return outcome
+    const overlay: PendingWrite = { id: ++this.pendingId, ops: entry.inverse, timestamp: Date.now() }
+    const drop = (state: CacheState) => state.pending.filter((p) => p !== overlay)
+    this.store.set(this.cacheAtom, (state) => ({ ...state, pending: [...state.pending, overlay] }))
+    const unshow = () => this.store.set(this.cacheAtom, (state) => ({ ...state, pending: drop(state) }))
+    const notUndone = () => {
+      const at = this.undone.indexOf(entry)
+      if (at >= 0) this.undone.splice(at, 1)
+      this.syncUndo()
+    }
+    const before = [...this.inflight]
+    const run = this.undoing.then(async () => {
+      let result: WriteResult
+      try {
+        result = await entry.sent
+      } catch {
+        // It never landed; its own failure already took it off the views.
+        notUndone()
+        unshow()
+        return null
+      }
+      if (result.first_seq > result.last_seq) {
+        notUndone()
+        unshow()
+        return null
+      }
+      await Promise.allSettled(before)
+      let outcome: UndoOutcome | null
+      try {
+        outcome = await this.client.undo(this.branch, this.author, result.first_seq)
+      } catch (error) {
+        notUndone()
+        unshow()
+        // Back in its place among the batches undo can reach.
+        const at = this.done.findIndex((d) => d.at > entry.at)
+        this.done.splice(at < 0 ? this.done.length : at, 0, entry)
+        this.syncUndo()
+        this.fail(error)
+        throw error
+      }
+      if (!outcome) {
+        // Too old for the server after all: nothing changed.
+        notUndone()
+        unshow()
+        return null
+      }
+      await this.readBack(entry.ops, () => drop)
+      return outcome
+    })
+    this.undoing = run.catch(() => undefined)
+    return run
   }
 
-  /** Send the newest undone batch again, as a new write (optimistic, like any write). */
+  /**
+   * Send the newest undone batch again, as a new write (optimistic, like any
+   * write). Its `timestamp` links keep the sort the server gave them, so they
+   * go back to their places.
+   */
   redo(): Promise<WriteResult> | undefined {
-    const ops = this.undone.pop()
-    if (!ops) return undefined
-    const sent = this.send(ops)
+    const entry = this.undone.pop()
+    if (!entry) return undefined
+    this.syncUndo()
+    const sent = this.send(pinTimestamps(entry.ops, entry.at), async () =>
+      pinTimestamps(entry.ops, (await entry.sent).timestamp),
+    )
     // Refused: it can be redone again later.
     sent.catch(() => {
-      this.undone.push(ops)
+      this.undone.push(entry)
       this.syncUndo()
     })
     return this.track(sent)

@@ -636,6 +636,7 @@ fn branches(&self) -> Result<Vec<BranchInfo>>;
 
 ```rust
 fn undo(&mut self, branch: BranchId, author: &str) -> Result<Option<UndoOutcome>>;
+fn undo_expecting(&mut self, branch: BranchId, author: &str, expect: Option<Seq>) -> Result<Option<UndoOutcome>>;
 ```
 
 [CHOSEN, I5] The rules:
@@ -651,6 +652,7 @@ Steps, all in one `BEGIN IMMEDIATE` transaction:
    - Find the newest batch B on the branch with the given author and `created_at >= now − 5 min`.
    - If there is no batch, return `None`.
    - If the branch is archived, return `Archived`.
+   - With `expect` (`undo_expecting`, the HTTP `seq`): if B does not start at that seq, refuse with `UndoRefused`. A client names the batch that it wrote, so it never removes a newer batch of the same author from elsewhere. The client's optimistic undo depends on this (client/PARADIGM.md section 5).
 2. **Check hazard 1: another branch froze the events.**
    - Look for another branch with a frozen parent range on this branch that includes a seq of B.
    - If one exists, refuse with `UndoRefused`. Nothing changes.

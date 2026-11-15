@@ -699,6 +699,19 @@ async fn undo_ok_and_refused() {
         Value::Null
     );
 
+    // refused 409: the newest batch is not the one named by seq
+    post_ok(
+        &s.base,
+        "/write",
+        json!({ "branch": b, "author": "u", "ops": [
+        { "set": { "entity": "e", "key": "x", "value": 2 } } ] }),
+    )
+    .await;
+    let r = post(&s.base, "/undo", json!({ "branch": b, "author": "u", "seq": 1 })).await;
+    assert_eq!(r.status().as_u16(), 409);
+    let out = post_ok(&s.base, "/undo", json!({ "branch": b, "author": "u", "seq": 2 })).await;
+    assert_eq!(out["removed"], json!([2, 2]));
+
     // refused 409: a fork freezes the batch, so undo is refused
     let c = make_branch(&s.base).await;
     post_ok(

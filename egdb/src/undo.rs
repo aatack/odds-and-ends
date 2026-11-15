@@ -36,6 +36,18 @@ impl Store {
     ///
     /// Removed sequence IDs are never reused: the branch counter does not go back.
     pub fn undo(&mut self, branch: BranchId, author: &str) -> Result<Option<UndoOutcome>> {
+        self.undo_expecting(branch, author, None)
+    }
+
+    /// [`Store::undo`], but only when the newest batch starts at `expect`;
+    /// refused otherwise. A client names the batch that it wrote, so that it
+    /// never removes a newer one that the same author wrote elsewhere.
+    pub fn undo_expecting(
+        &mut self,
+        branch: BranchId,
+        author: &str,
+        expect: Option<Seq>,
+    ) -> Result<Option<UndoOutcome>> {
         let now = self.now();
         let tx = self
             .conn
@@ -58,6 +70,11 @@ impl Store {
         let Some((first, last)) = found else {
             return Ok(None);
         };
+        if let Some(expect) = expect.filter(|&e| e != first) {
+            return Err(Error::UndoRefused(format!(
+                "the newest batch starts at event {first}, not {expect}"
+            )));
+        }
 
         if let Some(follower) = frozen_follower(&tx, row.bid, first, last)? {
             return Err(Error::UndoRefused(format!(

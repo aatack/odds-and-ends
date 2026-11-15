@@ -65,13 +65,18 @@ The same request is not sent two times. After a write, a preload can be sent aga
 4. If the server accepts the write, the browser reads the changed entities again. Then it replaces the pending write with the server's data in one update. Thus the screen does not flicker.
 5. A load that started before a write ends is not allowed to replace the data of that write. Each write increments a counter. Each entity keeps the counter of its last write. A load does not change an entity that has a later counter than the load.
 
-**Undo and redo.** The client keeps a list of the batches that it wrote, with the sequence IDs that the server gave them.
+**Undo and redo.** The client does all the work of undo, so undo and redo show at once, like writes. It keeps a stack of the batches that it wrote, from the moment that it writes them. With each batch it keeps the state of each target before the batch, as the cache knew it (`inverseOf`).
 
-1. `undo()` waits for the writes that are not confirmed. Then it asks the server to undo the author's newest batch. Undo is not optimistic: the browser does not know the values that the batch replaced.
-2. The server says which sequence IDs it removed. The client finds its batch with those IDs, reads its entities again, and keeps its ops on a redo list.
-3. `redo()` sends the newest ops on the redo list again, as a new write. This write is optimistic, like all writes.
-4. A new write (not a redo) clears the redo list.
-5. If the undone batch is not one that this client wrote (the same author on a different client), the client cannot redo it. It reads all cached entities again.
+1. `undo()` takes the newest batch off the stack. It adds the old state as a pending write, so all views show it immediately, and it puts the batch on the redo stack.
+2. Then, after the writes that came before it, it asks the server to undo the batch. It names the batch by its first sequence ID (`seq`). The server refuses if the author's newest batch is a different one (for example, the same author on a different client). Thus the client never removes a batch that it did not write.
+3. When the server accepts, the client reads the batch's entities again and drops the pending old state, in one update.
+4. When the server refuses, the client drops the pending old state, so the batch shows again. The batch goes back on the undo stack, and the promise rejects.
+5. A batch older than five minutes (`UNDO_WINDOW_MS`) cannot be undone: the server keeps it for ever. `undo()` then gives `null` and changes nothing.
+6. `redo()` sends the newest batch on the redo stack again, as a new write. This write is optimistic, like all writes. A link that took its sort from the time of the write gets the sort that the server gave it the first time, so it goes back to the same place, not to the end.
+7. A write after an undo waits until the server has done the undo. A redo immediately after an undo thus works.
+8. A new write (not a redo) clears the redo stack.
+
+Limit: the old state is what the cache knew. A target that was not loaded shows its new state until the server answers.
 
 A write to an entity that the cache does not know makes a new local entity. Its link groups are empty, not "not loaded". This is correct for a new entity. For an old entity that the browser did not load, the server's data replaces it when the write is confirmed.
 

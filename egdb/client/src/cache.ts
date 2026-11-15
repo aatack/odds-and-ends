@@ -181,6 +181,64 @@ export function sortLinks(links: CachedLink[], direction: Direction): CachedLink
   })
 }
 
+/**
+ * Ops that put back what `ops` replace, as far as `view` knows it: the
+ * optimistic half of an undo. A value goes back to what it was (null if it was
+ * absent); a link goes back to its sort key, or is removed if it was not there.
+ * A target the view has not loaded is left out: the read after the undo brings
+ * the server's state. Take it before the batch is applied.
+ */
+export function inverseOf(view: EntityView, ops: readonly Op[]): Op[] {
+  const seen = new Set<string>()
+  const out: Op[] = []
+  for (const op of ops) {
+    if ('set' in op) {
+      const { entity, key } = op.set
+      const target = JSON.stringify(['v', entity, key])
+      if (seen.has(target)) continue
+      seen.add(target)
+      const record = view.get(entity)
+      // An entity the cache does not know is new as far as the write shows it.
+      if (record && !record.values) continue
+      out.push({ set: { entity, key, value: record?.values?.[key] ?? null } })
+      continue
+    }
+    const { source, destination, link_type } = op.link
+    const target = JSON.stringify(['l', source, destination, link_type])
+    if (seen.has(target)) continue
+    seen.add(target)
+    let known = false
+    let sort: number | null = null
+    for (const [id, direction, other] of [
+      [source, 'outbound', destination],
+      [destination, 'inbound', source],
+    ] as const) {
+      const record = view.get(id)
+      const links = record?.links[groupKey(link_type, direction)] ?? (record?.local ? [] : undefined)
+      if (!links) continue
+      known = true
+      const link = links.find((l) => otherEnd(l, direction) === other)
+      if (link) sort = link.sort
+      break
+    }
+    if (!known) continue
+    out.push({ link: { source, destination, link_type, sort: sort === null ? 'removed' : { explicit: sort } } })
+  }
+  return out
+}
+
+/**
+ * The same ops with each `timestamp` sort fixed at `timestamp`, so that a
+ * batch sent again puts its links back where they were, not at the end.
+ */
+export function pinTimestamps(ops: readonly Op[], timestamp: number): Op[] {
+  return ops.map((op) =>
+    'link' in op && (op.link.sort ?? 'timestamp') === 'timestamp'
+      ? { link: { ...op.link, sort: { explicit: timestamp } } }
+      : op,
+  )
+}
+
 /** Apply a batch of ops to `base` directly (used when a write is confirmed but cannot be read back). */
 export function applyOps(base: ReadonlyMap<EntityId, EntityRecord>, ops: readonly Op[], now: number) {
   const next = new Map(base)

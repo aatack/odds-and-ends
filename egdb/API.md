@@ -167,8 +167,10 @@ curl -s -X POST $URL/restore_entity -H 'content-type: application/json' \
 
 ### POST /undo
 
-Request: `{branch, author}`. Response: the undo outcome, or `null` when there
-is nothing to undo.
+Request: `{branch, author, seq?}`. Response: the undo outcome, or `null` when there
+is nothing to undo. With `seq`, undo only when the newest batch starts at that
+seq; otherwise it is refused (`undo_refused`). A client names the batch it wrote,
+so it never removes a newer one that the same author wrote elsewhere.
 
 ```sh
 curl -s -X POST $URL/undo -H 'content-type: application/json' \

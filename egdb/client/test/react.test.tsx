@@ -247,6 +247,69 @@ describe.skipIf(!haveServer)('hooks', () => {
     expect(result.current.history).toEqual({ undo: 2, redo: 0 })
   })
 
+  it('undo shows at once, and redo puts links back in their places', async () => {
+    const egdb = fresh()
+    const { result } = renderHook(
+      () => ({ walk: useWalk({ root: ['root'], follow: query.follow, limit: 3 }), writer: useWrite(), history: useUndo() }),
+      { wrapper: wrapper(egdb) },
+    )
+    await waitFor(() => expect(result.current.walk.loading).toBe(false))
+    const children = () => egdb.view().get('root')!.links['child\u0000outbound']!.map((l) => [l.destination, l.sort])
+    const before = children()
+    const text = () => result.current.walk.rows[1]!.values?.text
+    const original = text()
+
+    // Undo before the write is even confirmed: both show at once, in order.
+    let undone!: Promise<unknown>
+    act(() => {
+      void result.current.writer.write([op.set('root.0', 'text', 'gone'), op.unlink('root', 'root.2', 'child')])
+      undone = result.current.writer.undo()
+    })
+    expect(text()).toBe(original)
+    expect(children()).toEqual(before)
+    expect(result.current.history).toEqual({ undo: 0, redo: 1 })
+    await act(() => undone)
+    expect(text()).toBe(original)
+    expect(children()).toEqual(before)
+    await act(() => egdb.refresh())
+    expect(children()).toEqual(before)
+
+    // A link added at the end comes back at the same sort on redo, not at a new time.
+    await act(() => result.current.writer.write([op.set('late', 'type', 'list'), op.link('root', 'late', 'child')]))
+    const added = children().find(([id]) => id === 'late')!
+    act(() => {
+      undone = result.current.writer.undo()
+    })
+    expect(children().some(([id]) => id === 'late')).toBe(false)
+    let redone!: Promise<unknown>
+    act(() => {
+      redone = result.current.writer.redo()!
+    })
+    expect(children().some(([id]) => id === 'late')).toBe(true)
+    await act(() => Promise.all([undone, redone]))
+    await act(() => egdb.refresh())
+    expect(children().find(([id]) => id === 'late')).toEqual(added)
+    await act(() => result.current.writer.write([op.unlink('root', 'late', 'child'), op.archive('late')]))
+  })
+
+  it("undo never removes the same author's newer batch from another client", async () => {
+    const mine = fresh()
+    const theirs = fresh()
+    await mine.load(['undo.n'])
+    await mine.write(op.set('undo.n', 'text', 'mine'))
+    await theirs.write(op.set('undo.m', 'text', 'theirs'))
+    const undone = mine.undo()
+    expect(mine.view().get('undo.n')!.values?.text).toBeUndefined() // optimistic
+    await expect(undone).rejects.toThrow(/newest batch/)
+    // Refused: the batch shows again, and can still be undone once theirs is.
+    expect(mine.view().get('undo.n')!.values?.text).toBe('mine')
+    expect(mine.store.get(mine.undoAtom)).toEqual({ undo: 1, redo: 0 })
+    expect(await server.client.value(branch, 'undo.m', 'text')).toBe('theirs')
+    await theirs.undo()
+    await mine.undo()
+    expect(await server.client.value(branch, 'undo.n', 'text')).toBeNull()
+  })
+
   it('useFind pages and takes in local writes', async () => {
     const egdb = fresh()
     const { result } = renderHook(

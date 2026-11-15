@@ -25,7 +25,7 @@ use tokio::net::TcpListener;
 
 use crate::error::Result;
 use crate::store::Store;
-use crate::types::{BranchId, Direction, ParentRef, SeqRange, WriteBatch};
+use crate::types::{BranchId, Direction, ParentRef, Seq, SeqRange, WriteBatch};
 use crate::{Change, Filter, FindOptions, Follow, LogFilter, LogKind, ProveOptions, WalkOptions};
 use dto::query::{
     node_predicate, FilterDto, FindDto, FindOptionsDto, FollowDto, ProveDto, ProveOptionsDto,
@@ -232,6 +232,9 @@ async fn restore_entity(
 struct UndoReq {
     branch: String,
     author: String,
+    /// Only undo the newest batch if it starts at this seq.
+    #[serde(default)]
+    seq: Option<Seq>,
 }
 
 async fn undo(
@@ -239,8 +242,8 @@ async fn undo(
     ApiJson(body): ApiJson<UndoReq>,
 ) -> ApiResult<Option<UndoOutcomeDto>> {
     let id = parse_branch(&body.branch)?;
-    let author = body.author;
-    let outcome = on_store(&state, move |s| s.undo(id, &author)).await?;
+    let (author, seq) = (body.author, body.seq);
+    let outcome = on_store(&state, move |s| s.undo_expecting(id, &author, seq)).await?;
     state.wrote();
     Ok(Json(outcome.map(UndoOutcomeDto::from)))
 }

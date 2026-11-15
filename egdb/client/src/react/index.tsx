@@ -58,7 +58,7 @@ export interface Writer {
   link(source: EntityId, destination: EntityId, linkType: string, sort?: Sort): Promise<WriteResult>
   unlink(source: EntityId, destination: EntityId, linkType: string): Promise<WriteResult>
   archive(entity: EntityId): Promise<WriteResult>
-  /** Undo this author's newest batch (not optimistic: it waits for the server). */
+  /** Undo this client's newest batch (optimistic: it shows at once); `null` when there is none. */
   undo(): ReturnType<Egdb['undo']>
   /** Send the newest undone batch again (optimistic); `undefined` when there is none. */
   redo(): ReturnType<Egdb['redo']>

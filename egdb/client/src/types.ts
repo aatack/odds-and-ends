@@ -124,6 +124,9 @@ export interface WriteResult {
   timestamp: number
 }
 
+/** How long the server lets a batch be undone (`UNDO_WINDOW_MS` on the server). */
+export const UNDO_WINDOW_MS = 5 * 60 * 1000
+
 export interface UndoOutcome {
   removed: [number, number]
   events: number

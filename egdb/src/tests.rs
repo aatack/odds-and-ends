@@ -740,6 +740,24 @@ fn undo_steps_back_one_batch_at_a_time() {
 }
 
 #[test]
+fn undo_expecting_removes_only_the_named_batch() {
+    let mut f = Fixture::new();
+    let first = f.write(f.main, "alex", vec![Op::set("n", "text", "one")]);
+    let second = f.write(f.main, "alex", vec![Op::set("n", "text", "two")]);
+    // The newest batch is not the one named: nothing changes.
+    let refused = f.store.undo_expecting(f.main, "alex", Some(first.first_seq));
+    assert!(matches!(refused, Err(Error::UndoRefused(_))));
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("two"));
+    let out = f
+        .store
+        .undo_expecting(f.main, "alex", Some(second.first_seq))
+        .unwrap()
+        .unwrap();
+    assert_eq!(out.removed, (second.first_seq, second.last_seq));
+    assert_eq!(f.text(f.main, "n", "text").as_deref(), Some("one"));
+}
+
+#[test]
 fn undo_is_one_author() {
     let mut f = Fixture::new();
     f.write(f.main, "alex", vec![Op::set("a", "text", "alex")]);

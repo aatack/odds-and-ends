@@ -8,6 +8,8 @@ export {
   viewOf,
   isTyped,
   emptyCache,
+  inverseOf,
+  pinTimestamps,
   type CacheState,
   type CachedLink,
   type EntityRecord,

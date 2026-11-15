@@ -101,9 +101,12 @@ export class EgdbClient {
     return this.call('POST', '/restore_entity', { branch, author, entity, entity_type: entityType })
   }
 
-  /** Undo the author's newest batch on the branch; `null` when there is none. */
-  undo(branch: BranchId, author: string): Promise<UndoOutcome | null> {
-    return this.call('POST', '/undo', { branch, author })
+  /**
+   * Undo the author's newest batch on the branch; `null` when there is none.
+   * With `seq`, only when that batch starts at `seq` (refused otherwise).
+   */
+  undo(branch: BranchId, author: string, seq?: number): Promise<UndoOutcome | null> {
+    return this.call('POST', '/undo', seq === undefined ? { branch, author } : { branch, author, seq })
   }
 
   // --- reads ----------------------------------------------------------------
