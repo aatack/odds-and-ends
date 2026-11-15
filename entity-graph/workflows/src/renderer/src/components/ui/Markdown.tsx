@@ -36,8 +36,14 @@ export const ItemRefContext = createContext<((id: string, label?: string) => Rea
 export const GoContext = createContext<((place: string) => void) | null>(null)
 
 const ITEM_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+/** What may be an item's id: a UUID, a username, a URL (an id with no item is drawn as it was written). */
+const MAYBE_ID = /^(?:[\w.-]+|https?:\/\/\S+)$/
 
-/** Links open in the browser: the window's open handler sends http(s) there. One to nowhere whose text is an item's id refers to that item. */
+/**
+ * Links open in the browser: the window's open handler sends http(s) there. One to nowhere whose text may be an item's
+ * id (`[id]()`: a UUID, a username, a URL) refers to that item; one to an item's id (`[label](id)`, as a paste writes)
+ * too, with its label.
+ */
 function Link({ href, children }: { href?: string; children?: React.ReactNode }) {
   const itemRef = useContext(ItemRefContext)
   const go = useContext(GoContext)
@@ -48,7 +54,8 @@ function Link({ href, children }: { href?: string; children?: React.ReactNode })
         {children}
       </button>
     )
-  if (!href && itemRef && (ITEM_ID.test(text) || /^https?:\/\//.test(text))) return itemRef(text)
+  if (!href && itemRef && MAYBE_ID.test(text)) return itemRef(text)
+  if (href && itemRef && ITEM_ID.test(href)) return itemRef(href, text || undefined)
   // A URL is an item too (a note brings it in): drawn as its pill, with the link's own text if it has some.
   if (href && itemRef && /^https?:\/\//.test(href)) return itemRef(href, text === href ? undefined : text)
   return (

@@ -16,12 +16,13 @@ export function ItemRef({ id, item, label, onOpen }: { id: string; item: Item | 
   useEffect(() => {
     if (!item) void api().itemInfoDetail(id).then((d) => setFound(d ? pillText(d.info) : null))
   }, [id, item])
-  // A URL that is no item (one in text no note brought in) is a link, as it was.
+  // A URL that is no item (one in text no note brought in) is a link, as it was; anything else that is no item, its text.
   if (!item && found === null && /^https?:/.test(id))
     return (
       <a href={id} target="_blank" rel="noreferrer">
         {label || id}
       </a>
     )
+  if (!item && found === null) return <>{label || id}</>
   return <Pill id={id} icon={item && <ItemIcon item={item} />} label={label || (item?.title ?? found ?? id)} onOpen={() => onOpen(id)} />
 }
