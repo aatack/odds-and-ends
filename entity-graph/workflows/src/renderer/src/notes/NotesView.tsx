@@ -190,7 +190,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
     scroller.current?.querySelector('.note-row.selected')?.scrollIntoView({ block: 'nearest' })
   }, [at, rows.length])
   // The wheel anywhere on the page scrolls the tree, not only over it: the margins, the header. Not in a dialog (it
-  // scrolls as anything does), nor under one.
+  // scrolls as anything does), nor under one, nor over the chat beside it (Split).
   const inDialog = useContext(DialogContext)
   const dialog = useRef(inDialog)
   dialog.current = inDialog
@@ -198,7 +198,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
     const on = (e: WheelEvent) => {
       const el = scroller.current
       const t = e.target as HTMLElement | null
-      if (dialog.current || modalOpen() || !el || e.defaultPrevented || t?.closest('.notes-scroll, .side-pane, .side-nav, .modal, [role="dialog"], .menu, textarea')) return
+      if (dialog.current || modalOpen() || !el || e.defaultPrevented || t?.closest('.notes-scroll, .split-view > .item, .side-pane, .side-nav, .modal, [role="dialog"], .menu, textarea')) return
       el.scrollBy({ top: e.deltaY, left: 0 })
     }
     window.addEventListener('wheel', on, { passive: true })

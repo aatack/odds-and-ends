@@ -496,7 +496,7 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
       {w.error && <div className="error">{w.error}</div>}
       <Unsent />
       {home && w.empty && <p className="muted view-note">Nothing needs you.</p>}
-      <div className={`view-body ${!debug && (shown === 'comments' || shown === 'notes' || (shown === 'focus' && (e.type === 'file' || e.type === 'bot' || e.type === 'link' || e.type === 'github_pr'))) ? 'fill' : ''}`}>
+      <div className={`view-body ${!debug && (shown === 'comments' || shown === 'notes' || shown === 'split' || (shown === 'focus' && (e.type === 'file' || e.type === 'bot' || e.type === 'link' || e.type === 'github_pr'))) ? 'fill' : ''}`}>
         {debug ? (
           <DebugView id={e.id} />
         ) : shown === 'assignments' ? (
@@ -515,6 +515,12 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
             {/* Your own page only: your Slack conversations, while Slack is set up. */}
             {e.id === w.overview.me.id && <SlackChannels onOpen={home ? openFromItems : openItem} />}
           </>
+        ) : shown === 'split' && d.item ? (
+          // Its notes on the left and its comments on the right (one above the other on a phone), each as on its own.
+          <div className={`split-view ${mobile ? 'mobile' : ''}`}>
+            <NotesView key={`notes:${e.id}`} info={e} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={openItem} onBack={w.back} mobile={mobile} />
+            <ItemView key={`chat:${e.id}`} detail={d.item} catalog={w.catalog} act={act} onOpen={openItem} mobile={mobile} />
+          </div>
         ) : shown === 'pins' ? (
           // What is pinned to it and what it is pinned to: the right pane's lists, on their own.
           <div className="pins-view">{pins}</div>

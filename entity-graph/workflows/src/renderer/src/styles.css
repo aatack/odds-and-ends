@@ -460,6 +460,17 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .margin-panel .notes-scroll { padding-bottom: 12px; }
 .margin-panel .composer { padding-top: 4px; padding-bottom: 10px; }
 .margin-panel .margin-status { display: none; }
+/* The Split view: the notes and the chat side by side, each in its own column (its own gutters), a line between. */
+.split-view { flex: 1; min-height: 0; display: flex; }
+.split-view > * { flex: 1 1 0; min-width: 0; min-height: 0; }
+.split-view > .item { display: flex; flex-direction: column; border-left: 1px solid var(--line); }
+.split-view > .notes { padding-top: 4px; }
+.split-view > .notes > :not(.note-picking) { padding-left: var(--col-l); padding-right: var(--col-r); }
+.split-view.mobile { flex-direction: column; }
+.split-view.mobile > .notes > :not(.note-picking) { padding-left: 12px; padding-right: 12px; }
+/* The chat says nothing the notes beside it (and the header) already do: no parent line, no title. */
+.split-view > .item > .item-parent, .split-view > .item .chat-title { display: none; }
+.split-view.mobile > .item { border-left: none; border-top: 1px solid var(--line); }
 /* The Pins view (an item's pins on their own, or in a margin's thread): the right pane's lists, as the pane sets them. */
 .pins-view { display: flex; flex-direction: column; gap: 16px; max-width: 520px; }
 .margin-panel > .pins-view { padding: 12px 14px; overflow-y: auto; }
