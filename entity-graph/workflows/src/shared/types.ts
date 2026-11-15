@@ -430,8 +430,6 @@ export interface WorkflowsAPI {
   newNotes: (title: string, pinTo: string | null) => Promise<string>
   /** A topic and its notes, depth first (only topics' notes are walked into): the notes view's tree. */
   subtree: (itemId: string) => Promise<ItemInfo[]>
-  /** An item as text at a size, as bots read it (`engine/views.ts`): Copy in its menu. Null if there is no such item. */
-  viewText: (itemId: string, size: 'pill' | 'card' | 'focus') => Promise<string | null>
   /** Sets an item's type to the one it looks like (or makes an id no item has into it): the debug view's correction. */
   setInferredType: (itemId: string) => Promise<void>
   /** What the finder reads from the store for any of `who`: what is pinned to them, and what was assigned to them and no longer is (the latest first). */
@@ -547,7 +545,7 @@ export interface LogEntry {
 
 /** WorkflowsAPI's calls (all but the subscriptions), by name: each goes to the backend as it is. */
 export const API_METHODS = [
-  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'setOpen', 'moveItem', 'newNotes', 'subtree', 'viewText', 'setInferredType', 'finder', 'items', 'setOwner', 'editLog',
+  'overview', 'detail', 'itemInfoDetail', 'inspect', 'catalog', 'next', 'create', 'send', 'cancel', 'runNow', 'close', 'reopen', 'addItems', 'uploadFile', 'fileData', 'fileText', 'saveFileText', 'runTool', 'pin', 'setValue', 'setOpen', 'moveItem', 'newNotes', 'subtree', 'setInferredType', 'finder', 'items', 'setOwner', 'editLog',
   'typeScripts', 'rename', 'saveBot', 'deleteBot',
   'assign', 'wakeBot', 'users', 'saveUser', 'signIn', 'integrations', 'addSlack', 'removeSlack', 'setIntegrationValue', 'clearSlackCache', 'trustBotFolders', 'slackView', 'slackConversations', 'setDeepgramKey', 'deepgramKey', 'hasDeepgram', 'mcp', 'regenerateMcpToken', 'setMcpPort',
   'source', 'phone', 'setPhoneTailnet', 'setPhonePort', 'setPhoneTailnetPort', 'regeneratePhoneToken',

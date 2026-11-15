@@ -96,3 +96,12 @@ export function focusText(read: Reader, id: string, opts: FocusOptions = {}): st
   }
   return [pillText(info, { ids }), ...body].join('\n')
 }
+
+export type Size = 'pill' | 'card' | 'focus'
+
+/** An item at a size, as text; null if there is no such item. The engine's for bots, and the window's own (to copy). */
+export function viewText(read: Reader, id: string, size: Size, opts: FocusOptions = {}): string | null {
+  if (size === 'focus') return focusText(read, id, opts)
+  const info = read.info(id)
+  return !info ? null : size === 'pill' ? pillText(info, opts) : cardText(info, opts)
+}

@@ -42,7 +42,6 @@ export function handlers(engine: Engine, admin: Admin, me: string, source = ''):
     moveItem: (itemId, to) => engine.moveItem(itemId, to, me),
     newNotes: (title, pinTo) => engine.newNotes(title, pinTo, me),
     subtree: (itemId) => engine.subtree(itemId),
-    viewText: (itemId, size) => engine.view(itemId, size, { ids: false }),
     setInferredType: (itemId) => engine.setInferredType(itemId, me),
     finder: (who) => engine.finder(who, 16, me),
     items: async (ids) => ids.flatMap((id) => engine.get(id, me) ?? []),

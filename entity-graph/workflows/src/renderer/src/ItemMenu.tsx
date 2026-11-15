@@ -9,6 +9,7 @@ import type { Recent } from './sections'
 import { itemActions } from './itemActions'
 import { everyone, nameOf } from './people'
 import { api } from './useWorkflows'
+import { itemText } from './itemText'
 import { forwardAtom, HISTORY_LIMIT, menuAtom, renameAtom, sameView, viewsAtom, type View } from './views'
 
 /** What to spread on anything standing for an item, so a right-click on it opens the item menu. */
@@ -179,11 +180,11 @@ export function ItemMenu({ actOn, overview, recent }: { overview: Overview; rece
       {row(
         'copy',
         'Copy',
-        done(() => copy(api().viewText(id, 'card'))),
+        done(() => copy(itemText(id, 'card', overview))),
         <>
-          <button onClick={done(() => copy(api().viewText(id, 'pill')))}>Pill text</button>
-          <button onClick={done(() => copy(api().viewText(id, 'card')))}>Card text</button>
-          <button onClick={done(() => copy(api().viewText(id, 'focus')))}>Focus text</button>
+          <button onClick={done(() => copy(itemText(id, 'pill', overview)))}>Pill text</button>
+          <button onClick={done(() => copy(itemText(id, 'card', overview)))}>Card text</button>
+          <button onClick={done(() => copy(itemText(id, 'focus', overview)))}>Focus text</button>
           <button onClick={done(() => copy(id))}>ID</button>
         </>,
         'Copy it as its card reads; hover for its pill, focus or id',
