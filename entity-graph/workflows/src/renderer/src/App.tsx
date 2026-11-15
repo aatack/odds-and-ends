@@ -9,7 +9,7 @@ import { IconButton } from './components/ui/IconButton'
 import { appearanceAtom, applyAppearance, MODES, SERIFS, THEMES } from './appearance'
 import { Chat } from './Chat'
 import { createPortal } from 'react-dom'
-import { autoUpdate, flip, offset, size, useFloating } from '@floating-ui/react-dom'
+import { autoUpdate, flip, offset, shift, size, useFloating } from '@floating-ui/react-dom'
 import { DialogContext, openModal } from './state/ui'
 import { DebugView } from './DebugView'
 import { Pins } from './Pins'
@@ -192,7 +192,7 @@ export function App({ mobile, onSignOut, onCloseSource }: { mobile: boolean; onS
           {mobile && <AppMenu mobile={mobile} onSignOut={onSignOut} onCloseSource={onCloseSource} />}
         </div>
         <ItemMenu actOn={items.actOn} overview={items.overview} recent={items.recent} />
-        <Preview />
+        <Preview mobile={mobile} />
       </ItemRefContext.Provider>
       </ActContext.Provider>
       </OverviewContext.Provider>
@@ -393,10 +393,12 @@ function ItemsMain({ mobile }: { mobile: boolean }) {
   // On a phone, the right pane, open over the view; anywhere new closes it.
   const [panel, setPanel] = useState(false)
   useEffect(() => setPanel(false), [w.views])
+  // While a margin's thread is open beside the column, the column makes room for it, as a document does for its comments.
+  const previewing = useAtomValue(previewAtom) !== null
   const frame = (view: ReactNode, side?: ReactNode) => (
     <>
       <main className="main">
-        <div className="content">{view}</div>
+        <div className={`content ${previewing && !mobile ? 'previewing' : ''}`}>{view}</div>
       </main>
       {!mobile && <aside className="side-pane">{side}</aside>}
       {mobile && panel && side && (
@@ -855,13 +857,18 @@ function Unsent() {
   )
 }
 
+/** As `--preview` in styles.css, which makes the room for it. */
+const PREVIEW_WIDTH = 380
+
 /**
- * An item's other view (`previewAtom`, from a chat's or a tree's margin), dropped open beneath its row, as wide as it,
- * and nothing more: its chat with its input (to reply, or hand it to a bot), or its tree with its keys. While open it is
- * a dialog: the keys and the wheel are its, Escape shuts it (or, while typing, leaves the box first), and pressing
- * anywhere outside it shuts it. What is opened from in it opens in the main view.
+ * An item's other view (`previewAtom`, from a chat's or a tree's margin), the same view as the main one shows, and
+ * nothing more: its chat with its input (to reply, or hand it to a bot), or its tree with its keys. On a desktop it
+ * opens in the margin to the right of the column, level with its row, always as wide (as a document's comment thread
+ * does; the column makes room for it, `.content.previewing`); on a phone, beneath its row. While open it is a dialog:
+ * the keys and the wheel are its, Escape shuts it (or, while typing, leaves the box first), and pressing anywhere
+ * outside it (its row too) shuts it. What is opened from in it opens in the main view.
  */
-function Preview() {
+function Preview({ mobile }: { mobile: boolean }) {
   const w = useItems()
   const [p, setP] = useAtom(previewAtom)
   const [d, setD] = useState<ItemInfoDetail | null>(null)
@@ -906,14 +913,19 @@ function Preview() {
   }, [p, setP])
   const { refs, floatingStyles } = useFloating({
     strategy: 'fixed',
-    placement: 'bottom-start',
+    placement: mobile ? 'bottom-start' : 'right-start',
     middleware: [
-      offset(4),
+      offset(mobile ? 4 : 12),
       flip({ padding: 8 }),
+      // Kept on the screen, over the column if the window is too narrow to have it beside it.
+      shift({ padding: 8, crossAxis: true }),
       size({
         padding: 8,
         apply: ({ rects, availableHeight, elements }) => {
-          Object.assign(elements.floating.style, { width: `${rects.reference.width}px`, height: `${Math.max(220, Math.min(440, availableHeight))}px` })
+          Object.assign(elements.floating.style, {
+            width: mobile ? `${rects.reference.width}px` : `${PREVIEW_WIDTH}px`,
+            maxHeight: `${Math.max(220, Math.min(520, availableHeight))}px`,
+          })
         },
       }),
     ],

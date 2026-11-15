@@ -7,10 +7,10 @@ import { OverviewContext } from './status'
 import { previewAtom } from './views'
 
 /**
- * To the right of a topic in a chat or a tree: that it has notes (in a chat) or comments (in a tree), as an icon that
- * drops them open beneath its row (pressed again, shuts them); and who else has it, as their pictures (lit while a bot works on it). So a tree's sections can be
- * handed to bots and watched from the tree. With none yet, the icon shows only while its row is hovered (or its dropdown
- * is open), to start them there.
+ * In the margin to the right of a topic's row in a chat or a tree (outside the column, on a desktop): that it has notes
+ * (in a chat) or comments (in a tree), as an icon that opens them beside its row (pressed again, shuts them); and who
+ * else has it, as their pictures (lit while a bot works on it). So a tree's sections can be handed to bots and watched
+ * from the tree. With none yet, the icon shows only while its row is hovered (or its thread is open), to start them there.
  */
 export function Margin({ info, other }: { info: ItemInfo; other: 'comments' | 'notes' }) {
   const o = useContext(OverviewContext)

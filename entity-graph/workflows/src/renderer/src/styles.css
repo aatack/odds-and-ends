@@ -39,8 +39,8 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 .error { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; white-space: pre-wrap; }
 .error-text { color: var(--danger); }
 .item { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
-.item-parent { padding: 0 var(--gutter); }
-.chat-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--gutter); display: flex; flex-direction: column; }
+.item-parent { padding: 0 var(--col-r) 0 var(--col-l); }
+.chat-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--col-r) 0 var(--col-l); display: flex; flex-direction: column; }
 .chat-scroll .chat { margin-top: auto; padding-bottom: 8px; }
 .chat-scroll .chat-title { margin: auto 0 12px; font-size: 22px; font-weight: 500; }
 .chat-scroll .chat-title + .chat { margin-top: 0; }
@@ -89,7 +89,7 @@ button[data-ui].link { background: none; color: var(--muted); padding: 0; }
 /* Where else a message is: as a reply quotes what it answers, a bar above it with a coloured edge. */
 .item-ref .pill-label, .assignee-pill .pill-label { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
 .chat-working { font-size: 12px; color: var(--muted); padding: 0 4px 8px; }
-.composer { padding: 12px var(--gutter) 16px; display: flex; flex-direction: column; gap: 8px; }
+.composer { padding: 12px var(--col-r) 16px var(--col-l); display: flex; flex-direction: column; gap: 8px; }
 .composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .item h1 { font-size: 20px; font-weight: 500; margin: 0 0 6px; }
 .meta { display: flex; gap: 12px; align-items: center; color: var(--muted); font-size: 12px; flex-wrap: wrap; }
@@ -238,7 +238,7 @@ button[data-ui].avatar:hover { background: var(--color-gray-300); filter: none; 
 .task-card-title { overflow: hidden; text-overflow: ellipsis; }
 /* A searched phrase (Ctrl+F's, the finder's), wherever text shows it. */
 mark { background: rgb(250 204 21 / 0.35); color: inherit; border-radius: 0.125rem; }
-.find-line { flex: none; margin: 0 var(--gutter); width: auto; background: var(--color-gray-100); border-radius: 18px; }
+.find-line { flex: none; margin: 0 var(--col-r) 0 var(--col-l); width: auto; background: var(--color-gray-100); border-radius: 18px; }
 .find-line input { width: 100%; font: inherit; color: var(--ink); line-height: 20px; }
 /* Under what is typed, rather than over it: Ctrl+Enter's question, while there is text. */
 .hint.below { position: static; display: block; padding-bottom: 4px; }
@@ -313,7 +313,17 @@ button[data-ui].blocker-text { text-align: left; padding: 0; overflow: hidden; t
 /* The middle takes its full width: the header always does, and every scroller reaches the right pane, its scrollbar against
    it. What reads better narrow (a chat, the finder, notes, pages) keeps to a column by padding (`--gutter`), not a width,
    so it scrolls from the edge all the same; a focus that wants the whole width (a file, a web page, a bot) fills it. */
-.content { --gutter: max(32px, calc((100% - 920px) / 2)); width: 100%; height: 100%; display: flex; flex-direction: column; }
+.content { --gutter: max(32px, calc((100% - 920px) / 2)); --col-l: var(--gutter); --col-r: var(--gutter); width: 100%; height: 100%; display: flex; flex-direction: column; }
+/* A chat and a tree keep to the column by `--col-l` and `--col-r`: on a desktop with a margin to the right of it, outside
+   it (`--margin`), for what `.margin-status` says of each row. While a row's thread is open beside it (`.previewing`), the
+   column moves over to make room for it (`--preview`, as `PREVIEW_WIDTH`), as a document does for its comments, keeping
+   at least 360px; a window too narrow for both has the thread over the column's edge. */
+.app:not(.mobile) .content { --margin: 96px; --col-r: max(var(--gutter), calc(var(--margin) + 16px)); }
+.app:not(.mobile) .content.previewing {
+  --preview: 380px;
+  --col-l: max(32px, calc((100% - 920px - var(--preview) - 24px) / 2));
+  --col-r: min(max(calc(var(--preview) + 24px), calc((100% - 920px + var(--preview) + 24px) / 2)), calc(100% - var(--col-l) - 360px));
+}
 .side-nav { flex: none; width: 200px; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; padding: 12px 8px; border-right: 1px solid var(--line); }
 .side-nav-pages { display: flex; flex-direction: column; gap: 2px; }
 button[data-ui].side-nav-page { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; border-radius: 6px; background: none; color: var(--muted); font-size: 13px; text-align: left; }
@@ -426,22 +436,29 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .assignee-pill .icon { width: 13px; height: 13px; }
 .assignee-avatar { display: inline-flex; width: 20px; height: 20px; border-radius: 10px; align-items: center; justify-content: center; background: var(--panel); margin-left: -4px; }
 .assignee-avatar:first-child { margin-left: 0; }
-.margin-status { display: inline-flex; align-items: center; gap: 4px; align-self: center; margin: 0 6px; color: var(--color-gray-500); font-size: 12px; flex-shrink: 0; }
+/* What a chat's or a tree's row says in its margin (Margin.tsx). On a desktop, out in the margin to the right of the
+   column, level with the row's first line; on a phone, after the row, in it. */
+.margin-status { display: inline-flex; align-items: center; gap: 4px; color: var(--color-gray-500); font-size: 12px; flex-shrink: 0; white-space: nowrap; }
 .margin-status .icon { width: 13px; height: 13px; }
+.app:not(.mobile) :is(.bubble-row, .note-row) { position: relative; }
+.app:not(.mobile) .margin-status { position: absolute; left: calc(100% + 12px); top: 2px; }
+.app:not(.mobile) .bubble-row .margin-status { top: 6px; }
+.app.mobile .margin-status { align-self: flex-start; margin: 2px 6px 0; }
+.app.mobile .bubble-row .margin-status { margin-top: 6px; }
+.app.mobile .bubble-row.theirs .margin-status { margin-left: auto; }
 .margin-link { display: inline-flex; align-items: center; gap: 3px; padding: 1px 5px; border-radius: 6px; color: inherit; }
 .margin-link:hover { background: var(--color-gray-100); color: var(--ink); }
-.note-row .margin-status { align-self: flex-start; margin-top: 2px; }
-/* In a chat, the margin is a gutter to the right of every bubble, so they line up whether or not it has anything. */
-.bubble-row .margin-status { align-self: flex-start; margin-top: 6px; min-width: 56px; justify-content: flex-start; }
-.bubble-row.theirs .margin-status { margin-left: auto; }
 .margin-link.none:not(.chosen) { visibility: hidden; }
 .bubble-row:hover .margin-link.none, .note-row:hover .margin-link.none { visibility: visible; }
 .margin-link.chosen { background: var(--color-gray-100); color: var(--ink); }
-/* An item's other view, dropped open beneath its row. */
-.margin-panel { z-index: 40; display: flex; flex-direction: column; background: var(--bg, var(--panel)); border: 1px solid var(--color-gray-200); border-radius: 10px; box-shadow: 0 8px 28px rgb(0 0 0 / 0.25); overflow: hidden; outline: none; }
+/* A row's other view, in the margin beside it (beneath it on a phone): the same view as the main one, in a column of
+   its own, without margins of its own. */
+.margin-panel { --gutter: 14px; --col-l: 14px; --col-r: 14px; z-index: 40; display: flex; flex-direction: column; background: var(--bg, var(--panel)); border: 1px solid var(--color-gray-200); border-radius: 10px; box-shadow: 0 8px 28px rgb(0 0 0 / 0.25); overflow: hidden; outline: none; }
 .margin-panel > .item, .margin-panel > .notes { flex: 1; min-height: 0; padding-top: 8px; }
-.margin-panel .notes-scroll { padding-bottom: 24px; }
+.margin-panel .notes { padding: 8px 6px 0; }
+.margin-panel .notes-scroll { padding-bottom: 12px; }
 .margin-panel .composer { padding-top: 4px; padding-bottom: 10px; }
+.margin-panel .margin-status { display: none; }
 .assignee-avatar.working { background: color-mix(in srgb, var(--accent) 20%, var(--panel)); }
 .sign-in { height: 100vh; display: flex; justify-content: center; padding-top: 20vh; background: var(--panel); }
 .sign-in .page { width: 420px; }
@@ -598,7 +615,7 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .status-dot.waiting { background: transparent; box-shadow: inset 0 0 0 1px var(--muted); }
 .status-line { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .status-line .status-dot { margin-left: 0; }
-.assignee-cards { display: flex; flex-direction: column; gap: 4px; margin: 0 var(--gutter); }
+.assignee-cards { display: flex; flex-direction: column; gap: 4px; margin: 0 var(--col-r) 0 var(--col-l); }
 .app.mobile .assignee-cards { margin: 0 8px; }
 button[data-ui].assignee-card { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; border-radius: 8px; background: var(--color-gray-100); font-size: 13px; text-align: left; }
 .assignee-card .icon { width: 14px; height: 14px; flex: none; color: var(--muted); }
@@ -641,7 +658,7 @@ button[data-ui].script-card.whole:hover { background: var(--color-gray-200); fil
 
 /* Notes keep to the column too, their scroller reaching the edge. */
 /* Not the move toast: it keeps its own padding, in the corner. */
-.view-body.fill > .notes > :not(.note-picking) { padding-left: var(--gutter); padding-right: var(--gutter); }
+.view-body.fill > .notes > :not(.note-picking) { padding-left: var(--col-l); padding-right: var(--col-r); }
 .app.mobile .view-body.fill > .notes > :not(.note-picking) { padding-left: 12px; padding-right: 12px; }
 /* A link's focus: the page itself, the whole width, under a line with its address. */
 .link-focus { flex: 1; min-height: 0; display: flex; flex-direction: column; }

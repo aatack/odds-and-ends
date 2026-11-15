@@ -272,11 +272,13 @@ row out of its note (into none); `q` sections only, `Shift+Q` open ones only; Ct
 Escape clears a find or the filters. Where each tree was left (the row, what is folded) is kept per note. The wheel
 anywhere on the page scrolls the tree.
 
-**Margins** (`Margin.tsx`): to the right of a topic in a chat (a gutter beside every bubble) an icon with how many
-notes it has; to the right of a row in a tree, how many comments (`ItemInfo.comments`/`notes`, counted by `toInfo`).
-Pressing it drops that view open beneath the row, as wide as it, as a comment thread opens in a document (`previewAtom`,
-drawn by `Preview` in `App.tsx`): the chat with its input, or the tree with its keys, `bare` (no title, parent or find
-line). It is a dialog while open (`openModal`; the views in it read `DialogContext` so `modalOpen(mine)` leaves them
+**Margins** (`Margin.tsx`): on a desktop a chat and a tree keep to a column (`--col-l`, `--col-r`) with a margin to
+its right, outside it; there, level with each topic, an icon with how many notes it has (in a chat) or comments (in a
+tree) (`ItemInfo.comments`/`notes`, counted by `toInfo`). Pressing it opens that view in the margin beside the row,
+always 380px wide, as a comment thread opens beside a document, and the column moves over to make room for it
+(`.content.previewing`); on a phone it opens beneath the row (`previewAtom`, drawn by `Preview` in `App.tsx`). It is
+the same view as the main one: the chat with its input, or the tree with its keys, `bare` (no title, parent or find
+line), without margins of its own. It is a dialog while open (`openModal`; the views in it read `DialogContext` so `modalOpen(mine)` leaves them
 their keys, and the tree's wheel is left alone); Escape leaves a box being typed in, then shuts it; pressing outside it
 or its icon again shuts it. Who else has the topic (`ItemInfo.assignees`, less the person looking) shows there too, lit
 while a bot works on it.
