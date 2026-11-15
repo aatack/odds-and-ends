@@ -435,6 +435,8 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .margin-status { display: inline-flex; align-items: center; gap: 4px; color: var(--color-gray-500); font-size: 12px; flex-shrink: 0; white-space: nowrap; }
 .margin-status .icon { width: 13px; height: 13px; }
 .app:not(.mobile) :is(.bubble-row, .note-row) { position: relative; }
+/* The row's hover reaches over its margin (not its highlight), so moving to an icon there doesn't lose it on the way. */
+.app:not(.mobile) .content :is(.bubble-row, .note-row)::after { content: ''; position: absolute; top: 0; bottom: 0; left: 100%; width: calc(var(--margin) + 12px); }
 .app:not(.mobile) .margin-status { position: absolute; left: calc(100% + 12px); top: 2px; }
 .app:not(.mobile) .bubble-row .margin-status { top: 6px; }
 .app.mobile .margin-status { align-self: flex-start; margin: 2px 6px 0; }
