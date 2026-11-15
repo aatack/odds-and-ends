@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { createServer } from 'node:http'
 import { dirname, join } from 'node:path'
 import { Admin } from '../engine/admin'
-import { openStore } from '../engine/egdb'
+import { openStore, storeBranch } from '../engine/egdb'
 import { Engine } from '../engine/engine'
 import { startMcp } from '../engine/mcp'
 import { ITEM_TYPES } from '../engine/itemTypes'
@@ -49,7 +49,10 @@ async function main(): Promise<void> {
   const log = (...a: unknown[]) => console.log(new Date().toISOString(), ...a)
   const token = randomBytes(24).toString('base64url')
   const blocking = (type: string) => Boolean(ITEM_TYPES.find((t) => t.type === type)?.blocking)
-  const { store, sink, egdb } = await openStore(file, randomBytes(24).toString('base64url'), blocking, (m) => log(m))
+  const egdbToken = randomBytes(24).toString('base64url')
+  const { store, sink, egdb, client } = await openStore(file, egdbToken, blocking, (m) => log(m))
+  // For the window's `/egdb/*` (egdbProxy.ts): egdb-server and the store's branch, never handed out.
+  const egdbTarget = { url: egdb.url, token: egdbToken, branch: await storeBranch(client) }
   const engine = new Engine({ store, dataDir: dir, secrets: keyFileSecrets(dir) })
 
   const mcp = await startMcp(engine)
@@ -59,11 +62,11 @@ async function main(): Promise<void> {
   engine.on('sourceError', (message: string) => log(message))
 
   const changes = new Changes(engine)
-  const server = createServer(handler({ engine, calls: api, changes, token: () => token }))
+  const server = createServer(handler({ engine, calls: api, changes, token: () => token, egdb: egdbTarget }))
   const port = await listen(server, Number(arg('port') ?? process.env.WORKFLOWS_PORT ?? 0))
   // The phone's: the built app beside this file (out/renderer), as electron-vite builds it.
   const built = join(__dirname, '../renderer')
-  const phone = await startPhone({ engine, calls: api, changes, files: existsSync(join(built, 'index.html')) ? built : null })
+  const phone = await startPhone({ engine, calls: api, changes, egdb: egdbTarget, files: existsSync(join(built, 'index.html')) ? built : null })
   admin.phone = phone
   if (phone.status().error) log(phone.status().error)
   const info: BackendInfo = { url: `http://127.0.0.1:${port}`, token, pid: process.pid }

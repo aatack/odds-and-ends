@@ -17,6 +17,7 @@ import type { AddressInfo } from 'node:net'
 import { extname, join, normalize, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { gzip as gzipCb } from 'node:zlib'
+import { egdbCall, type EgdbTarget } from './egdbProxy'
 import type { Engine } from '../engine/engine'
 import { OPEN_METHODS } from './api'
 
@@ -84,6 +85,8 @@ export interface HandlerOptions {
   token: () => string
   /** The phone's listener: the methods it is refused, the app's files, and the tailnet's gate. */
   phone?: { files: string | null; tailnet: () => boolean }
+  /** egdb-server, for `/egdb/*` (egdbProxy.ts). */
+  egdb?: EgdbTarget
 }
 
 /** Room for an upload: a file of up to 50 MB, as base64. */
@@ -121,12 +124,24 @@ export function handler(o: HandlerOptions): RequestListener {
       if (o.phone && fromTailnet(req) && !o.phone.tailnet())
         return send(res, 403, { error: 'This app is not open to the tailnet: turn it on from the Phone page, on the machine it runs on.' })
       if (path === '/health') return send(res, 200, { ok: true })
-      const isApi = path === '/events' || path.startsWith('/rpc/')
+      const isApi = path === '/events' || path.startsWith('/rpc/') || path.startsWith('/egdb/')
       if (!isApi && o.phone && req.method === 'GET') return await files(o.phone.files, path, req, res)
       if (!tokenMatches(req, o.token())) return send(res, 401, { error: o.phone ? 'The token is wrong: copy it again from the Phone page.' : 'A bearer token is needed: see backend.json.' })
       if (path === '/events' && req.method === 'GET') return o.changes.add(req, res)
-      const m = /^\/rpc\/(\w+)$/.exec(path)
       const user = String(req.headers['x-workflows-user'] ?? '')
+      const e = /^\/egdb\/(\w+)$/.exec(path)
+      if (e) {
+        if (!o.egdb || req.method !== 'POST') return send(res, 404, { error: `No ${path}.` })
+        if (!o.engine.isUser(user)) return send(res, 200, { error: user ? `Nobody is called ${user}: sign in again.` : 'Sign in first.' })
+        let out: unknown
+        try {
+          out = { result: await egdbCall(o.egdb, o.engine, e[1], await body(req), user) }
+        } catch (err) {
+          out = { error: (err as Error).message }
+        }
+        return send(res, 200, out, req)
+      }
+      const m = /^\/rpc\/(\w+)$/.exec(path)
       const calls = o.calls(user || o.engine.me())
       if (!m || req.method !== 'POST' || !Object.hasOwn(calls, m[1]) || (o.phone && PHONE_REFUSED.has(m[1])))
         return send(res, 404, { error: `No method ${path}${o.phone && m && PHONE_REFUSED.has(m[1]) ? ' from the phone' : ''}.` })

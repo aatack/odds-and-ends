@@ -278,6 +278,27 @@ const file = join(dir, 'round-trip.egdb')
   assert.ok(changes.some((c) => c.includes('event: change')), 'changes are sent')
   await assert.rejects(call('send', id, 'nope', 'x'), /No preset nope/)
   await assert.rejects(call('nothing'), /No method/)
+  // /egdb/*: reads go to egdb-server on the store's branch, without settings; the write is the engine's; nothing else.
+  const egdb = async (route: string, body: unknown, user: string | null = 'tester') =>
+    (await (
+      await fetch(`${info.url}/egdb/${route}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${info.token}`, ...(user ? { 'x-workflows-user': user } : {}) },
+        body: JSON.stringify(body),
+      })
+    ).json()) as { result?: Record<string, unknown>; error?: string }
+  assert.match(String((await egdb('values', { entities: [id] }, null)).error), /Sign in first/)
+  const raw = '7f1c8a52-1111-4b6e-9a0a-000000000001'
+  const wrote = await egdb('write', { ops: [{ set: { entity: raw, key: 'type', value: 'topic' } }, { set: { entity: raw, key: 'text', value: 'Raw' } }, { link: { source: id, destination: raw, link_type: 'comments', sort: 'timestamp' } }] })
+  assert.deepEqual(wrote.result, { made: [raw] })
+  for (let i = 0; i < 50 && !((await egdb('values', { entities: [raw] })).result as Record<string, Record<string, unknown>> | undefined)?.[raw]?.text; i++) await new Promise((r) => setTimeout(r, 50))
+  assert.equal(((await egdb('values', { entities: [raw] })).result as Record<string, Record<string, unknown>>)[raw].text, 'Raw', 'a write is read back through egdb')
+  assert.deepEqual((await call('detail', id) as { children: { id: string }[] }).children.map((c) => c.id).slice(-1), [raw], 'and the engine has it')
+  const found = JSON.stringify((await egdb('find', { filter: { key: 'type', op: 'eq', value: 'wf.setting' } })).result ?? {})
+  assert.doesNotMatch(found, /"wf\./, 'settings never come back')
+  assert.match(String((await egdb('values', { entities: ['wf.setting.phone.token'] })).error), /not read this way/)
+  assert.match(String((await egdb('undo', {})).error), /not open to the app/)
+  assert.match(String((await egdb('write', { ops: [{ set: { entity: 'wf.x', key: 'value', value: 1 } }] })).error), /not an item/)
   // A second backend on the same data refuses to start.
   const second = spawn(process.execPath, ['--import', 'tsx', 'src/backend/index.ts', '--file', typed], { stdio: ['ignore', 'pipe', 'pipe'] })
   let secondOut = ''
