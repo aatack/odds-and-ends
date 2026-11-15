@@ -88,5 +88,8 @@ export const viewedAtom = atomWithStorage<string[]>('workflows.viewed', [], crea
 export const viewedAtAtom = atomWithStorage<Record<string, number>>('workflows.viewedAt', {}, createJSONStorage(() => localStorage), { getOnInit: true })
 export const VIEWED_LATELY_MS = 30 * 60 * 1000
 
-/** An item's other view, open in a small modal over this one (from a chat's or a tree's margin): Expand opens it. */
-export const previewAtom = atom<{ id: string; as: 'comments' | 'notes' } | null>(null)
+/**
+ * An item's other view, dropped open beneath its row (`anchor`) from a chat's or a tree's margin, as a comment thread
+ * opens beside a document: it has the keys and the wheel while open; pressing outside it, or its icon again, closes it.
+ */
+export const previewAtom = atom<{ id: string; as: 'comments' | 'notes'; anchor: HTMLElement } | null>(null)

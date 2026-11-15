@@ -81,8 +81,6 @@ const Message = memo(function Message(props: MessageProps) {
   const menu = useItemMenu()
   return (
     <div className={`bubble-row ${mine ? 'mine' : 'theirs'}`}>
-      {/* Its notes, and who else has it, in the margin on the open side. */}
-      {mine && <Margin info={e} other="notes" />}
       {!mine && <ItemAvatar info={e} owner={props.ownerId ? { name: props.ownerName ?? props.ownerId, onOpen: () => props.onOpen(props.ownerId!) } : null} />}
       <div className="bubble-stack">
         <div className={`bubble bubble-${e.type}`} title={`${who ? `${who}, ` : ''}${time(e.createdAt)}`} {...menu(e.id)}>
@@ -91,7 +89,8 @@ const Message = memo(function Message(props: MessageProps) {
           <span className="bubble-time">{shortTime(e.createdAt)}</span>
         </div>
       </div>
-      {!mine && <Margin info={e} other="notes" />}
+      {/* Its notes, and who else has it, in the margin to its right. */}
+      <Margin info={e} other="notes" />
     </div>
   )
 }, (a, b) => {

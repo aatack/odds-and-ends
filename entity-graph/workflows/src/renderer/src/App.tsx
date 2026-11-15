@@ -1,14 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Catalog, Item, ItemDetail, ItemInfo, ItemInfoDetail, Overview } from '../../shared/types'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { ChevronDown, ChevronLeft, ChevronUp, History, House, Inbox, Maximize2, Menu, MoreHorizontal, Plug, Server, Shapes, SkipForward, Smartphone, type LucideIcon } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronUp, History, House, Inbox, Menu, MoreHorizontal, Plug, Server, Shapes, SkipForward, Smartphone, type LucideIcon } from 'lucide-react'
 import { itemActions, type ItemAction } from './itemActions'
 import { Dropdown, DropdownItem, DropdownSeparator } from './components/ui/Dropdown'
 import { TypesPage } from './TypesPage'
 import { IconButton } from './components/ui/IconButton'
 import { appearanceAtom, applyAppearance, MODES, SERIFS, THEMES } from './appearance'
 import { Chat } from './Chat'
-import { Modal } from './components/ui/Modal'
+import { createPortal } from 'react-dom'
+import { autoUpdate, flip, offset, size, useFloating } from '@floating-ui/react-dom'
+import { DialogContext, openModal } from './state/ui'
 import { DebugView } from './DebugView'
 import { Pins } from './Pins'
 import { ItemMenu } from './ItemMenu'
@@ -20,7 +22,7 @@ import { ItemRefContext, Markdown } from './components/ui/Markdown'
 import { GuideDoc } from './GuideDoc'
 import { ItemRef } from './ItemRef'
 import { Pill } from './sizes'
-import { DISPLAYS, displayOf, pillLabel, type Display } from '../../shared/views'
+import { DISPLAYS, displayOf, type Display } from '../../shared/views'
 import { FileFocus, uploadFiles } from './FileView'
 import { NotesView } from './notes/NotesView'
 import { ItemInfoIcon, TYPE_NAME } from './icons'
@@ -736,8 +738,8 @@ function Assignees({ item, overview, onOpen }: { item: Item; overview: Overview;
 }
 
 /** A task's chat and its input; `mobile` lays both out for a phone. */
-function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpen: (id: string) => void; mobile?: boolean }) {
-  const { detail, catalog, act, onOpen, mobile = false } = props
+function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpen: (id: string) => void; mobile?: boolean; bare?: boolean }) {
+  const { detail, catalog, act, onOpen, mobile = false, bare = false } = props
   const { item } = detail
   const w = useItems()
   const scroller = useRef<HTMLDivElement>(null)
@@ -785,7 +787,7 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
         take(files)
       }}
     >
-      {detail.parent && (
+      {detail.parent && !bare && (
         <div className="meta item-parent">
           in{' '}
           <button data-ui className="link" onClick={() => onOpen(detail.parent!.id)}>
@@ -793,11 +795,11 @@ function ItemView(props: { detail: ItemDetail; catalog: Catalog; act: Act; onOpe
           </button>
         </div>
       )}
-      <FindLine />
+      {!bare && <FindLine />}
       <div className="chat-scroll" ref={scroller}>
-        {short && <h2 className="chat-title">{item.title}</h2>}
+        {short && !bare && <h2 className="chat-title">{item.title}</h2>}
         <Chat detail={detail} overview={w.overview} catalog={catalog} act={act} onOpen={onOpen} mobile={mobile} />
-        {w.loading && !detail.children.length && <div className="chat-note muted">Loading…</div>}
+        {w.loading && !bare && !detail.children.length && <div className="chat-note muted">Loading…</div>}
       </div>
       <Assignees item={item} overview={w.overview} onOpen={onOpen} />
       <div className="composer">
@@ -888,9 +890,10 @@ function Unsent() {
 }
 
 /**
- * An item's other view in a modal (`previewAtom`, from a chat's or a tree's margin): its notes, or its comments.
- * Expand keeps that view as its display, as the header's menu does, and opens it; anything opened from in it opens
- * in the main view.
+ * An item's other view (`previewAtom`, from a chat's or a tree's margin), dropped open beneath its row, as wide as it,
+ * and nothing more: its chat with its input (to reply, or hand it to a bot), or its tree with its keys. While open it is
+ * a dialog: the keys and the wheel are its, Escape shuts it (or, while typing, leaves the box first), and pressing
+ * anywhere outside it shuts it. What is opened from in it opens in the main view.
  */
 function Preview() {
   const w = useItems()
@@ -909,43 +912,83 @@ function Preview() {
       off()
     }
   }, [id])
+  const panel = useRef<HTMLDivElement | null>(null)
+  // Registered as a dialog once per opening; its views read it (`DialogContext`) to keep their keys.
+  const close = useMemo(
+    () => () => {
+      const at = document.activeElement
+      if (at instanceof HTMLElement && panel.current?.contains(at) && ['INPUT', 'TEXTAREA'].includes(at.tagName)) {
+        at.blur()
+        panel.current.focus()
+      } else setP(null)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [p?.id, p?.as],
+  )
+  useEffect(() => (p ? openModal(close) : undefined), [p, close])
+  // Pressing outside shuts it. A press in it reaches React first (through portals too: the `@` finder), and says so.
+  const inside = useRef(false)
+  useEffect(() => {
+    if (!p) return
+    const down = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null
+      if (!inside.current && !t?.closest('.margin-link, .item-menu')) setP(null)
+      inside.current = false
+    }
+    document.addEventListener('mousedown', down)
+    return () => document.removeEventListener('mousedown', down)
+  }, [p, setP])
+  const { refs, floatingStyles } = useFloating({
+    strategy: 'fixed',
+    placement: 'bottom-start',
+    middleware: [
+      offset(4),
+      flip({ padding: 8 }),
+      size({
+        padding: 8,
+        apply: ({ rects, availableHeight, elements }) => {
+          Object.assign(elements.floating.style, { width: `${rects.reference.width}px`, height: `${Math.max(220, Math.min(440, availableHeight))}px` })
+        },
+      }),
+    ],
+    whileElementsMounted: autoUpdate,
+  })
+  useEffect(() => refs.setReference(p?.anchor ?? null), [p?.anchor, refs])
+  // The keys are its from the start: its input, for a chat; itself, for a tree.
+  useEffect(() => {
+    if (!d || !p) return
+    const box = p.as === 'comments' ? panel.current?.querySelector<HTMLElement>('.composer textarea') : null
+    ;(box ?? panel.current)?.focus()
+  }, [d?.info.id, p?.as])
   if (!p) return null
-  const close = () => setP(null)
   const open = (to: string) => {
-    close()
+    setP(null)
     w.open({ kind: 'event', id: to })
   }
-  const expand = () => {
-    if (d && d.info.params.display !== p.as) void w.act(() => api().setValue(p.id, 'display', p.as))
-    open(p.id)
-  }
-  return (
-    <Modal
-      size="preview"
-      onClose={close}
-      title={
-        <span className="preview-title">
-          <span className="pill-label">{d ? pillLabel(d.info) : 'Loading…'}</span>
-          <span className="muted">{p.as === 'notes' ? 'Notes' : 'Comments'}</span>
-          <button data-ui className="preview-expand" title="Open it here, on this view" onClick={expand}>
-            <Maximize2 className="icon" /> Expand
-          </button>
-        </span>
-      }
-    >
-      <div className="preview-body">
+  return createPortal(
+    <DialogContext.Provider value={close}>
+      <div
+        ref={(el) => {
+          panel.current = el
+          refs.setFloating(el)
+        }}
+        role="dialog"
+        tabIndex={-1}
+        className="margin-panel"
+        style={floatingStyles}
+        onMouseDown={() => (inside.current = true)}
+      >
         {!d ? (
           <div className="empty muted">Loading…</div>
         ) : p.as === 'notes' ? (
-          <NotesView key={d.info.id} info={d.info} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={open} onBack={close} />
+          <NotesView key={d.info.id} info={d.info} tasks={w.overview.items} recent={w.recent} bots={everyone(w.overview)} onOpen={open} onBack={() => setP(null)} bare />
         ) : d.item && w.catalog ? (
-          <div className="chat-scroll">
-            <Chat detail={d.item} overview={w.overview} catalog={w.catalog} act={w.act} onOpen={open} />
-          </div>
+          <ItemView key={d.info.id} detail={d.item} catalog={w.catalog} act={w.act} onOpen={open} bare />
         ) : (
           <div className="empty muted">Nothing to show.</div>
         )}
       </div>
-    </Modal>
+    </DialogContext.Provider>,
+    document.body,
   )
 }

@@ -428,12 +428,15 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 .margin-link { display: inline-flex; align-items: center; gap: 3px; padding: 1px 5px; border-radius: 6px; color: inherit; }
 .margin-link:hover { background: var(--color-gray-100); color: var(--ink); }
 .note-row .margin-status { align-self: flex-start; margin-top: 2px; }
-/* An item's other view, in a modal over this one. */
-.preview-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.preview-expand { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; font-weight: 500; }
-.preview-expand .icon { width: 13px; height: 13px; }
-.preview-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
-.preview-body > .notes, .preview-body > .chat-scroll { flex: 1; min-height: 0; }
+/* In a chat, the margin is a gutter to the right of every bubble, so they line up whether or not it has anything. */
+.bubble-row .margin-status { align-self: flex-start; margin-top: 6px; min-width: 56px; justify-content: flex-start; }
+.bubble-row.theirs .margin-status { margin-left: auto; }
+.margin-link.chosen { background: var(--color-gray-100); color: var(--ink); }
+/* An item's other view, dropped open beneath its row. */
+.margin-panel { z-index: 40; display: flex; flex-direction: column; background: var(--bg, var(--panel)); border: 1px solid var(--color-gray-200); border-radius: 10px; box-shadow: 0 8px 28px rgb(0 0 0 / 0.25); overflow: hidden; outline: none; }
+.margin-panel > .item, .margin-panel > .notes { flex: 1; min-height: 0; padding-top: 8px; }
+.margin-panel .notes-scroll { padding-bottom: 24px; }
+.margin-panel .composer { padding-top: 4px; padding-bottom: 10px; }
 .assignee-avatar.working { background: color-mix(in srgb, var(--accent) 20%, var(--panel)); }
 .sign-in { height: 100vh; display: flex; justify-content: center; padding-top: 20vh; background: var(--panel); }
 .sign-in .page { width: 420px; }

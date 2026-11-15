@@ -14,7 +14,7 @@ import { ItemInfoIcon } from '../icons'
 import { useItemMenu } from '../ItemMenu'
 import { ItemPicker } from '../ItemPicker'
 import type { Recent } from '../sections'
-import { modalOpen } from '../state/ui'
+import { DialogContext, modalOpen } from '../state/ui'
 import { TextInput, type Mentions } from '../TextInput'
 import { findAtom } from '../views'
 import { clearNotesError, createNote, notesError, moveNote, resolve, setNoteOpen, setNoteValue, useNotes, type NotesTree } from './store'
@@ -89,8 +89,9 @@ function within(tree: NotesTree, id: string, outer: string): boolean {
 const same = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => resolve(x) === resolve(b[i]))
 const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))
 
-export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent; bots: Mentions['bots']; onOpen: (id: string) => void; onBack: () => void; mobile?: boolean }) {
-  const { info, tasks, recent, bots, onOpen, onBack, mobile = false } = props
+/** `bare`: the tree alone, without the line saying what it is in, nor a find line (in a margin's dropdown). */
+export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent; bots: Mentions['bots']; onOpen: (id: string) => void; onBack: () => void; mobile?: boolean; bare?: boolean }) {
+  const { info, tasks, recent, bots, onOpen, onBack, mobile = false, bare = false } = props
   const root = info.id
   const { tree, error } = useNotes(root, info)
   const [places, setPlaces] = useAtom(placesAtom)
@@ -178,12 +179,16 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
   useEffect(() => {
     scroller.current?.querySelector('.note-row.selected')?.scrollIntoView({ block: 'nearest' })
   }, [at, rows.length])
-  // The wheel anywhere on the page scrolls the tree, not only over it: the margins, the header.
+  // The wheel anywhere on the page scrolls the tree, not only over it: the margins, the header. Not in a dialog (it
+  // scrolls as anything does), nor under one.
+  const inDialog = useContext(DialogContext)
+  const dialog = useRef(inDialog)
+  dialog.current = inDialog
   useEffect(() => {
     const on = (e: WheelEvent) => {
       const el = scroller.current
       const t = e.target as HTMLElement | null
-      if (!el || e.defaultPrevented || t?.closest('.notes-scroll, .side-pane, .side-nav, .modal, [role="dialog"], .menu, textarea')) return
+      if (dialog.current || modalOpen() || !el || e.defaultPrevented || t?.closest('.notes-scroll, .side-pane, .side-nav, .modal, [role="dialog"], .menu, textarea')) return
       el.scrollBy({ top: e.deltaY, left: 0 })
     }
     window.addEventListener('wheel', on, { passive: true })
@@ -193,7 +198,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
   // The keys, as entity-graph's: only while nothing is being typed into.
   const keys = useRef<(e: KeyboardEvent) => void>(() => {})
   keys.current = (e: KeyboardEvent) => {
-    if (isTyping(e.target) || modalOpen() || e.altKey || e.metaKey) return
+    if (isTyping(e.target) || modalOpen(dialog.current) || e.altKey || e.metaKey) return
     // A draft waiting (the window or the view was left mid-edit): Escape drops it, any other key goes back to it.
     if (editing) {
       if (e.key === 'Escape') {
@@ -352,7 +357,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
 
   return (
     <div className={`notes ${mobile ? 'mobile' : ''}`}>
-      {info.parentId && (
+      {info.parentId && !bare && (
         <div className="meta item-parent">
           in{' '}
           <button data-ui className="link" onClick={() => onOpen(info.parentId!)}>
@@ -360,7 +365,7 @@ export function NotesView(props: { info: ItemInfo; tasks: Item[]; recent: Recent
           </button>
         </div>
       )}
-      <FindLine />
+      {!bare && <FindLine />}
       {(sectionsOnly || openOnly) && (
         <div className="notes-filters">
           {sectionsOnly && (
