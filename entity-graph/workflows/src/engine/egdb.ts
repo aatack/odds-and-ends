@@ -103,17 +103,13 @@ export class EgdbSink implements Sink {
     // What was written just now is in it.
     await this.flush()
     const limit = query.limit ?? 200
-    const filter = { ...query, limit }
-    const [values, links] = await Promise.all([this.client.valueLog(this.branch, filter), this.client.linkLog(this.branch, filter)])
-    const all: (LogEntry & { seq: number })[] = [
-      ...values.map((c) => ({ at: c.event.timestamp, by: c.event.author, kind: 'value' as const, entity: c.entity, key: c.key, value: c.value, other: null, removed: false, seq: c.event.seq })),
-      ...links.map((c) => ({ at: c.event.timestamp, by: c.event.author, kind: 'link' as const, entity: c.source, key: c.link_type, value: null, other: c.destination, removed: c.sort === null, seq: c.event.seq })),
-    ]
-    // The newest first: by time, then by seq (one write's items share a time).
-    return all
-      .sort((a, b) => b.at - a.at || b.seq - a.seq)
-      .slice(0, limit)
-      .map(({ seq: _s, ...e }) => e)
+    // One read of egdb's log: values and links together, the newest first.
+    const { events } = await this.client.log(this.branch, { ...query, limit })
+    return events.map((c) =>
+      c.kind === 'value'
+        ? { at: c.event.timestamp, by: c.event.author, kind: 'value' as const, entity: c.entity, key: c.key, value: c.value, other: null, removed: false }
+        : { at: c.event.timestamp, by: c.event.author, kind: 'link' as const, entity: c.source, key: c.link_type, value: null, other: c.destination, removed: c.sort === null },
+    )
   }
 
   async inspect(id: string): Promise<Inspection> {
