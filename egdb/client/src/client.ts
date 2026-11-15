@@ -12,9 +12,9 @@ import type {
   FindOptions,
   FindPage,
   Link,
-  LinkChange,
   LinkGroup,
   LinkPair,
+  Log,
   LogFilter,
   ParentRef,
   Prove,
@@ -22,7 +22,6 @@ import type {
   SeqRange,
   UndoOutcome,
   Value,
-  ValueChange,
   Values,
   WalkPage,
   WalkRequest,
@@ -118,14 +117,12 @@ export class EgdbClient {
     return this.call('POST', '/value_events', { branch, entities })
   }
 
-  /** Every value event the branch sees that the filter keeps, the newest first: the edit log of values. */
-  valueLog(branch: BranchId, filter: LogFilter = {}): Promise<ValueChange[]> {
-    return this.call('POST', '/value_log', { branch, ...filter })
-  }
-
-  /** Every link event the branch sees that the filter keeps (entities match either end), the newest first. */
-  linkLog(branch: BranchId, filter: LogFilter = {}): Promise<LinkChange[]> {
-    return this.call('POST', '/link_log', { branch, ...filter })
+  /**
+   * The log: every event the branch sees that the filter keeps, values and links together, the newest first. With
+   * `after`, the branch's own events after that seq, oldest first: the change feed (with `wait`, held open).
+   */
+  log(branch: BranchId, filter: LogFilter = {}): Promise<Log> {
+    return this.call('POST', '/log', { branch, ...filter })
   }
 
   value(branch: BranchId, entity: EntityId, key: string): Promise<Value> {

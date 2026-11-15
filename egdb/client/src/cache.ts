@@ -13,6 +13,7 @@
 
 import { matches } from './filter.js'
 import type {
+  Change,
   Direction,
   EntityId,
   EventRef,
@@ -185,6 +186,49 @@ export function applyOps(base: ReadonlyMap<EntityId, EntityRecord>, ops: readonl
   const next = new Map(base)
   for (const op of ops) applyOp((id) => next.get(id), (r) => next.set(r.id, r), op, now)
   return next
+}
+
+/**
+ * Apply events from the change feed to `base`: only to what is loaded. A value
+ * lands on an entity whose values are loaded; a link, on each end whose group
+ * is loaded. Answers the new base and the entities it changed.
+ */
+export function applyChanges(
+  base: ReadonlyMap<EntityId, EntityRecord>,
+  changes: readonly Change[],
+): { base: Map<EntityId, EntityRecord>; touched: Set<EntityId> } {
+  const next = new Map(base)
+  const touched = new Set<EntityId>()
+  for (const change of changes) {
+    if (change.kind === 'value') {
+      const record = next.get(change.entity)
+      if (!record?.values) continue
+      const values = { ...record.values }
+      if (change.value === null) delete values[change.key]
+      else values[change.key] = change.value
+      next.set(record.id, { ...record, values })
+      touched.add(record.id)
+      continue
+    }
+    const { source, destination, link_type, sort, event } = change
+    for (const [id, direction, other] of [
+      [source, 'outbound', destination],
+      [destination, 'inbound', source],
+    ] as const) {
+      const record = next.get(id)
+      const group = groupKey(link_type, direction)
+      const links = record?.links[group]
+      if (!record || !links) continue
+      const rest = links.filter((l) => otherEnd(l, direction) !== other)
+      // The server shows a link only to an entity with a type: one known to have none stays out.
+      const far = next.get(other)?.values
+      const hidden = far !== undefined && !isTyped(far)
+      const kept = sort === null || hidden ? rest : sortLinks([...rest, { source, destination, link_type, sort, event }], direction)
+      next.set(id, { ...record, links: { ...record.links, [group]: kept } })
+      touched.add(id)
+    }
+  }
+  return { base: next, touched }
 }
 
 // --- merging what the server says ------------------------------------------

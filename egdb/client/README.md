@@ -34,6 +34,9 @@ import { EgdbProvider, useWalk, useWrite } from 'egdb-client/react'
 const client = new EgdbClient({ url: '/api', token })
 const egdb = new Egdb({ client, branch, author: 'alex' })
 
+// Writes made elsewhere (another tab, a bot, the server) land on what is loaded.
+const stop = egdb.follow()
+
 root.render(<EgdbProvider egdb={egdb}><App /></EgdbProvider>)
 
 function Outline() {
@@ -59,7 +62,8 @@ function Outline() {
 | `useWalk` | `{ root: Path; follow: Follow; include?: Filter; descend?: Filter; collapsed?: Path[]; limit?: number }`, plus for a virtualized table `{ range?: { start; end }; overscan?; chunk?; buffer?; reanchorAfter?; maxShift?; initialAnchor?: { path; index }; onShift?(shift); lookahead? }` | `{ rows: TreeRow[]; first; rowAt(index): TreeRow \| undefined; count; atEnd; loading; anchor; anchorIndex; reanchor(path, index) }` |
 | `useFind` | `{ filter: Filter; order?: FindOrder; include_archived?; offset?; limit?; pageSize? }` | `{ rows: FindRowView[]; total; done; loading; error?; refresh() }` |
 | `useWrite` | none | `{ write(ops), set(entity, key, value), link(source, destination, type, sort?), unlink(...), archive(entity), undo(), redo() }`, each a `Promise` |
-| `useHistory` | none | `{ undo: number; redo: number }`: how many of this client's batches can be undone and redone |
+| `useUndo` | none | `{ undo: number; redo: number }`: how many of this client's batches can be undone and redone |
+| `useLog` | `LogFilter`: `{ entities?; authors?; keys?; since?; until?; limit?; kind?: 'values' \| 'links'; removed? }` | `{ events: Change[]; loading; error? }`: the log, newest first, read again as the feed moves |
 | `useEntity` | `(id, groups?: LinkPair[])` | `EntityRecord & { status }` |
 | `useEntityView` | none | `EntityView`: `get(id)` of any cached entity |
 | `useEgdb` | none | the `Egdb` of the nearest `EgdbProvider` |
@@ -94,7 +98,7 @@ interface FindRowView {
 
 ## Without React
 
-`Egdb` is plain TypeScript over a Jotai store (`egdb.store`): read `egdb.viewAtom`, subscribe with `egdb.store.sub`, and call `computeWindow(egdb.view(), request)` and `egdb.preloadWalk(...)` yourself. `EgdbClient` alone is a stateless client for every endpoint.
+`Egdb` is plain TypeScript over a Jotai store (`egdb.store`): read `egdb.viewAtom`, subscribe with `egdb.store.sub`, and call `computeWindow(egdb.view(), request)` and `egdb.preloadWalk(...)` yourself. `EgdbClient` alone is a stateless client for every endpoint (`log(branch, filter)` reads the log, and with `after` and `wait` is the change feed).
 
 ## Develop
 

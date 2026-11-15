@@ -1,6 +1,6 @@
 import { useVirtualizer, type Virtualizer } from '@tanstack/react-virtual'
 import { f, op, pathKey, type Follow, type Path, type TreeRow } from 'egdb-client'
-import { useFind, useHistory, useWalk, useWrite } from 'egdb-client/react'
+import { useFind, useUndo, useWalk, useWrite } from 'egdb-client/react'
 import { useRef, useState } from 'react'
 
 const ROW = 26
@@ -10,7 +10,7 @@ const ROOT: Path = ['root']
 export function App() {
   const [text, setText] = useState('')
   const writer = useWrite()
-  const history = useHistory()
+  const history = useUndo()
   return (
     <div style={{ display: 'flex', height: '100vh', font: '14px system-ui', color: '#292929' }}>
       <div style={{ flex: 2, display: 'flex', flexDirection: 'column', borderRight: '1px solid #eee' }}>

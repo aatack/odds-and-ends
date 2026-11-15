@@ -8,7 +8,7 @@ import type { EntityRecord, EntityView } from '../cache.js'
 import { localize, rowsOf, type FindRowView } from '../find.js'
 import { op } from '../ops.js'
 import { stableJson, queryKey, type Egdb, type FindQueryOptions } from '../store.js'
-import type { EntityId, Filter, Follow, LinkPair, Op, Path, Sort, Value, WriteResult } from '../types.js'
+import type { Change, EntityId, Filter, Follow, LinkPair, LogFilter, Op, Path, Sort, Value, WriteResult } from '../types.js'
 import { computeWindow, countBefore, pathKey, type TreeRow, type WalkQuery } from '../walk.js'
 
 export type { FindRowView } from '../find.js'
@@ -80,10 +80,40 @@ export function useWrite(): Writer {
   )
 }
 
-/** How many of this client's batches can be undone and redone. */
-export function useHistory(): { undo: number; redo: number } {
+/** How many of this client's batches can be undone and redone (`useWrite`'s undo and redo). */
+export function useUndo(): { undo: number; redo: number } {
   const egdb = useEgdb()
-  return useAtomValue(egdb.historyAtom, { store: egdb.store })
+  return useAtomValue(egdb.undoAtom, { store: egdb.store })
+}
+
+/** One `useLog` read: its events, and whether a read is under way. */
+export interface UseLogResult {
+  events: Change[]
+  loading: boolean
+  error?: unknown
+}
+
+/**
+ * The log (`/log`): every event the branch sees that `filter` keeps, the newest first. Read again when the filter
+ * changes, and, while `Egdb.follow` runs, each time the feed moves on.
+ */
+export function useLog(filter: LogFilter = {}): UseLogResult {
+  const egdb = useEgdb()
+  const head = useAtomValue(egdb.headAtom, { store: egdb.store })
+  const key = stableJson(filter)
+  const [state, setState] = useState<UseLogResult>({ events: [], loading: true })
+  useEffect(() => {
+    let live = true
+    setState((s) => ({ ...s, loading: true }))
+    egdb.client.log(egdb.branch, JSON.parse(key) as LogFilter).then(
+      (log) => live && setState({ events: log.events, loading: false }),
+      (error: unknown) => live && setState((s) => ({ ...s, loading: false, error })),
+    )
+    return () => {
+      live = false
+    }
+  }, [egdb, key, head])
+  return state
 }
 
 // --- walk --------------------------------------------------------------------

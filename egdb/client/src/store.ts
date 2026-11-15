@@ -5,6 +5,7 @@
 
 import { atom, createStore, type Atom, type PrimitiveAtom } from 'jotai/vanilla'
 import {
+  applyChanges,
   applyOps,
   emptyCache,
   entitiesOf,
@@ -62,7 +63,9 @@ export class Egdb {
   /** The last load or write that failed. */
   readonly errorAtom: PrimitiveAtom<unknown>
   /** How many of this client's batches can be undone and redone. */
-  readonly historyAtom: PrimitiveAtom<{ undo: number; redo: number }>
+  readonly undoAtom: PrimitiveAtom<{ undo: number; redo: number }>
+  /** The change feed's cursor (`follow`): the last seq applied, or null while not following. `useLog` reads again as it moves. */
+  readonly headAtom: PrimitiveAtom<number | null>
 
   private readonly preloadSteps: number
   private readonly onError?: (error: unknown) => void
@@ -90,7 +93,8 @@ export class Egdb {
     this.viewAtom = atom((get) => viewOf(get(this.cacheAtom)))
     this.findsAtom = atom<ReadonlyMap<string, FindState>>(new Map())
     this.errorAtom = atom<unknown>(undefined)
-    this.historyAtom = atom({ undo: 0, redo: 0 })
+    this.undoAtom = atom({ undo: 0, redo: 0 })
+    this.headAtom = atom<number | null>(null)
   }
 
   /** The cache as reads see it now. */
@@ -208,12 +212,12 @@ export class Egdb {
     this.inflight.add(promise)
     const forget = () => this.inflight.delete(promise)
     promise.then(forget, forget)
-    this.syncHistory()
+    this.syncUndo()
     return promise
   }
 
-  private syncHistory() {
-    this.store.set(this.historyAtom, { undo: this.done.length, redo: this.undone.length })
+  private syncUndo() {
+    this.store.set(this.undoAtom, { undo: this.done.length, redo: this.undone.length })
   }
 
   private async send(batch: Op[]): Promise<WriteResult> {
@@ -230,7 +234,7 @@ export class Egdb {
     }
     if (result.first_seq <= result.last_seq) {
       this.done.push({ ops: batch, first: result.first_seq, last: result.last_seq })
-      this.syncHistory()
+      this.syncUndo()
     }
     await this.readBack(batch, () => drop, pending.timestamp)
     return result
@@ -304,7 +308,7 @@ export class Egdb {
     }
     const [batch] = this.done.splice(at, 1)
     this.undone.push(batch!.ops)
-    this.syncHistory()
+    this.syncUndo()
     await this.readBack(batch!.ops, () => (state) => state.pending)
     return outcome
   }
@@ -317,7 +321,7 @@ export class Egdb {
     // Refused: it can be redone again later.
     sent.catch(() => {
       this.undone.push(ops)
-      this.syncHistory()
+      this.syncUndo()
     })
     return this.track(sent)
   }
@@ -342,6 +346,60 @@ export class Egdb {
       this.store.set(this.findsAtom, new Map())
     } catch (error) {
       this.fail(error)
+    }
+  }
+
+  // --- the change feed ---------------------------------------------------------
+
+  /**
+   * Follow the branch's change feed: hold `/log` open after the last seq seen, and apply each event to what is loaded
+   * (values of loaded entities, loaded link groups), so writes from elsewhere show with no reads. Events on what is
+   * not loaded are passed over: a later load brings them. Entities it changes count as written (`writtenSince`), so
+   * cached finds re-check them and older loads in flight don't undo them. A cursor the server doesn't know (`reset`)
+   * reads everything held again. Network errors retry, backing off. Answers how to stop.
+   */
+  follow(options: { wait?: number; limit?: number } = {}): () => void {
+    let stopped = false
+    const wait = options.wait ?? 25_000
+    const limit = options.limit ?? 1000
+    const run = async () => {
+      let failures = 0
+      let cursor = this.store.get(this.headAtom)
+      while (!stopped) {
+        try {
+          if (cursor === null) {
+            cursor = (await this.client.branch(this.branch)).head
+            this.store.set(this.headAtom, cursor)
+            continue
+          }
+          const page = await this.client.log(this.branch, { after: cursor, wait, limit })
+          if (stopped) return
+          failures = 0
+          if (page.reset) {
+            cursor = (await this.client.branch(this.branch)).head
+            await this.refresh()
+          } else if (page.events.length > 0) {
+            const since = ++this.writes
+            this.preloads.clear()
+            this.store.set(this.cacheAtom, (state) => {
+              const { base, touched } = applyChanges(state.base, page.events)
+              for (const id of touched) this.stamps.set(id, since)
+              return { ...state, base }
+            })
+            cursor = page.head
+          } else cursor = page.head
+          this.store.set(this.headAtom, cursor)
+        } catch (error) {
+          if (stopped) return
+          failures++
+          if (failures === 1) this.fail(error)
+          await new Promise((r) => setTimeout(r, [1000, 2000, 5000, 10_000][Math.min(failures - 1, 3)]))
+        }
+      }
+    }
+    void run()
+    return () => {
+      stopped = true
     }
   }
 

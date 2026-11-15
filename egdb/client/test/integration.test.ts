@@ -123,4 +123,53 @@ describe.skipIf(!haveServer)('against egdb-server', () => {
     expect(state.done).toBe(false)
     expect(egdb.view().get(state.ids[0]!)?.values?.type).toBe('list')
   })
+
+  it('reads the log, values and links together, and filters it', async () => {
+    await server.client.write({ branch, author: 'logger', ops: [op.set('logged', 'text', 'one'), op.link('logged', 'other', 'ref')] })
+    await server.client.write({ branch, author: 'logger', ops: [op.set('logged', 'text', null), op.unlink('logged', 'other', 'ref')] })
+    const log = await server.client.log(branch, { authors: ['logger'] })
+    expect(log.events).toHaveLength(4)
+    expect(log.events[0]!.event.seq).toBeGreaterThanOrEqual(log.events[3]!.event.seq)
+    const removed = await server.client.log(branch, { authors: ['logger'], removed: true })
+    expect(removed.events).toHaveLength(2)
+    const links = await server.client.log(branch, { authors: ['logger'], kind: 'links' })
+    expect(links.events.every((e) => e.kind === 'link')).toBe(true)
+    const after = await server.client.log(branch, { after: log.head })
+    expect(after.events).toEqual([])
+    expect(after.head).toBe(log.head)
+  })
+
+  it('follows the feed: writes from elsewhere land on what is loaded, with no reads', async () => {
+    await server.client.write({ branch, author: 'test', ops: [op.set('followed', 'text', 'before'), op.set('kid', 'type', 'task'), op.set('kid2', 'type', 'task'), op.link('followed', 'kid', 'child')] })
+    const egdb = new Egdb({ client: server.client, branch, author: 'test' })
+    await egdb.load(['followed'], [['child', 'outbound']])
+    const stop = egdb.follow({ wait: 2000 })
+    try {
+      // Wait until it has a cursor.
+      for (let i = 0; i < 100 && egdb.store.get(egdb.headAtom) === null; i++) await new Promise((r) => setTimeout(r, 20))
+      const values = server.client.values.bind(server.client)
+      let reads = 0
+      server.client.values = (...args) => {
+        reads++
+        return values(...args)
+      }
+      // Another writer: a value, a new link, and a value on an entity not loaded.
+      await server.client.write({
+        branch,
+        author: 'elsewhere',
+        ops: [op.set('followed', 'text', 'after'), op.link('followed', 'kid2', 'child'), op.set('unloaded', 'text', 'x')],
+      })
+      for (let i = 0; i < 100 && egdb.view().get('followed')?.values?.text !== 'after'; i++) await new Promise((r) => setTimeout(r, 20))
+      const record = egdb.view().get('followed')!
+      expect(record.values?.text).toBe('after')
+      expect(record.links['child\u0000outbound']!.map((l) => l.destination)).toEqual(['kid', 'kid2'])
+      expect(egdb.view().get('unloaded')).toBeUndefined()
+      expect(reads).toBe(0)
+      expect(egdb.writtenSince(0).has('followed')).toBe(true)
+    } finally {
+      stop()
+      server.client.values = Object.getPrototypeOf(server.client).values
+    }
+  })
 })
+

@@ -75,6 +75,16 @@ The same request is not sent two times. After a write, a preload can be sent aga
 
 A write to an entity that the cache does not know makes a new local entity. Its link groups are empty, not "not loaded". This is correct for a new entity. For an old entity that the browser did not load, the server's data replaces it when the write is confirmed.
 
+**Writes from elsewhere: the feed.** `follow()` keeps the cache up to date with writes that other clients, bots or the server make.
+
+1. It reads the branch's head, then holds `/log` open with `after: head` and `wait`. The server answers when a write lands (or the wait runs out).
+2. Each event is applied to what is loaded, with no reads: a value to an entity whose values are loaded; a link to each end whose link group is loaded (but not to an entity known to have no type, which the server would not show). Events on what is not loaded are passed over: a later load brings the server's data.
+3. The entities it changes get a new write counter, as a write's do. So a load that started earlier does not replace them, and a find checks them again against its filter.
+4. The answer's `head` is the next cursor, so a filter that matches nothing still moves on. `useLog` reads again each time it moves.
+5. `reset` (a cursor the server does not know, for example a replaced store) reads all cached entities again. A network error retries after 1, 2, 5, then 10 seconds.
+
+Limits: the feed has the branch's own events, not the ones it sees through its parents. An entity that newly matches a cached find, with values that are not loaded, does not show until the find is read again.
+
 ## 6. The anchor
 
 ### 6.1 The problem

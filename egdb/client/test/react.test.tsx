@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { f } from '../src/filter.js'
 import { op } from '../src/ops.js'
-import { EgdbProvider, useFind, useHistory, useWalk, useWrite } from '../src/react/index.js'
+import { EgdbProvider, useFind, useUndo, useWalk, useWrite } from '../src/react/index.js'
 import { Egdb } from '../src/store.js'
 import type { WalkQuery } from '../src/walk.js'
 import { haveServer, startServer, treeOps, type Running } from './server.js'
@@ -219,7 +219,7 @@ describe.skipIf(!haveServer)('hooks', () => {
   it('redo sends an undone batch again', async () => {
     const egdb = fresh()
     const { result } = renderHook(
-      () => ({ walk: useWalk({ root: ['root'], follow: query.follow, limit: 3 }), writer: useWrite(), history: useHistory() }),
+      () => ({ walk: useWalk({ root: ['root'], follow: query.follow, limit: 3 }), writer: useWrite(), history: useUndo() }),
       { wrapper: wrapper(egdb) },
     )
     await waitFor(() => expect(result.current.walk.loading).toBe(false))

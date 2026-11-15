@@ -38,7 +38,7 @@ export interface EventRef {
   author: string
 }
 
-/** What a log read keeps: each filter left out keeps everything. `keys` are value keys, or link types. */
+/** What a log read keeps: each filter left out keeps everything. `keys` are value keys and link types. */
 export interface LogFilter {
   entities?: EntityId[]
   authors?: string[]
@@ -47,12 +47,21 @@ export interface LogFilter {
   since?: number
   /** Before, in ms. */
   until?: number
-  /** At most this many, the newest kept. */
+  /** At most this many: the newest kept, or with `after` the oldest. */
   limit?: number
+  /** Only value events, or only link events; both when left out. */
+  kind?: 'values' | 'links'
+  /** Only clears and link removals. */
+  removed?: boolean
+  /** Only the branch's own events after this seq, oldest first: the change feed. */
+  after?: number
+  /** With `after`, and nothing after it: hold the request this many ms (at most 60000) for a write. */
+  wait?: number
 }
 
 /** One value event; `value` null is a clear. */
 export interface ValueChange {
+  kind: 'value'
   entity: EntityId
   key: string
   value: Value
@@ -61,11 +70,24 @@ export interface ValueChange {
 
 /** One link event; `sort` null is a removal. */
 export interface LinkChange {
+  kind: 'link'
   source: EntityId
   destination: EntityId
   link_type: string
   sort: number | null
   event: EventRef
+}
+
+export type Change = ValueChange | LinkChange
+
+/**
+ * A log read. `head` is the seq to pass as `after` next time (the last event's when `limit` cut it short, else the
+ * branch's head); `reset` says the cursor was past the head (from another store): read what is held again.
+ */
+export interface Log {
+  events: Change[]
+  head: number
+  reset: boolean
 }
 
 export interface Link {
