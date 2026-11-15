@@ -18,135 +18,166 @@ export function guide(page: Guide, reader: Reader): string {
 
 type Say = (human: string, agent: string) => string
 
+// Home follows the workflow, which is the source of truth for the whole app: get the next thing, read what you need,
+// act, hand it on. Each other guide sits under one step (Types under reading, Integrations under handing on), and
+// what fits no step is in *Other things*, to move into a step or take out of the app.
 function home(say: Say): string {
-  return `## What this app is for
+  return `${say(
+    `YAWN shows you the next thing that needs you. It also gives you what you need to decide. You give your input, then you give the item to the next person, bot or script.`,
+    `This app shows a person the next thing that needs them, with what they need to decide. They give their input, then they give the item to the next person, bot or script. You are one of the bots that items are given to. Your work follows the same steps.`,
+  )}
+
+Each part of the app helps with one of these four steps:
+
+1. **Get the next thing.**
+2. **Read what you need.**
+3. **Act.**
+4. **Hand it on, or close it.**
+
+## 1. Get the next thing
+
+An item is your turn when it is assigned to you. All the items assigned to you are your list.
 
 ${say(
-  `YAWN shows you the one thing that needs your attention next, with what you need to give your input on it beside it. You give it, then hand the thing on to whoever moves it next: a person, a bot, or a script. Everything else waits with them, not with you.
+  `Press [Next](#next) (\`Ctrl+D\`) to open the next item on your list. Next starts with the item that you have had for the longest time. It skips the items that you looked at in the last 30 minutes.
 
-Press [Next](#next) (\`Ctrl+D\`) to open the next thing that is your turn. Read its chat and what is pinned beside it, write what you have to say, assign it on, and press Next again.`,
-  `The app shows a person the one thing that needs their attention next, with the context to give their input; then they hand it on. You are one of those it is handed to: you are run on a topic assigned to you, read it (get_item), act on it, and hand it on (assign, or \`assign\` in your update) to whoever moves it next. Leave a person only what nobody else can answer.`,
+To see your full list, open [Assignments](#items) (\`Ctrl+L\`). It shows the items assigned to you first. Then it shows the items that you own, and the items pinned to you.`,
+  `The app runs you on one topic at a time, from your list. Your prompt gives the topic's id, and tells you what is new in it since your last run. Read the topic with get_item.
+
+To find other work, use items_waiting_on (a username, a bot's name, or a blocker type), next_for_human, list_items and get_item. A person's list shows the items assigned to them first, then the items that they own.`,
 )}
 
-## Topics
+## 2. Read what you need
 
-A topic is the one kind of thing people write: something said, a thing to be done, a note in a tree. Its text's first line is its name. Its status is open (a thing to be done, or a checkbox), closed, or none (a comment). ${say(
-  `Everything else in the app (a link, a file, a bot) is an item too, shown in a topic or beside it.`,
-  `The tools say item for anything in the database. Its status is \`open\`: true while open, false once closed, left out for none.`,
+Everything you need to decide is in the item, or pinned beside it. Most items are **topics**. A topic is what people write: something said, a thing to do, or a note in a tree. The first line of its text is its name. A topic is open (a thing to do, or a checkbox), closed, or neither (a comment).${say(
+  '',
+  ` In the tools, an item is anything in the database. Its status is \`open\`: true when open, false when closed, and not there for neither.`,
 )}
 
-## Who has it: assignees and owners
+A topic has three places to read:
 
-- Anything open can be **assigned** to people, bots and scripts, one or several. ${say(
-  `Assign from the top right of a topic, from its right-click menu (*Assign to*), or by writing \`@name\` in its chat.`,
-  `The assign action (an \`assignees\` link from the item), or \`assign\` in your update. People (list_people) sign in by username.`,
+- **Comments** are its chat. They are its history: who said what, what they added, and who they gave it to.
+- **Notes** are a tree of topics. They show what the topic knows now, in order. Use them for a plan, a checklist (open notes are its boxes), or a write-up to comment on point by point.
+- **Pins** show beside it. They are the items that help you act on it: a pull request, a link, a file, a split-off topic, or the topic it came from.
+
+Each item opens in one **view**. Its display sets the view. If it has no display, its type sets the view.
+
+- **Comments**: its chat. A topic or a script opens here.
+- **Notes**: its tree.
+- **Focus**: the view for its type. For example, a whole file, a pull request's page, or a Slack thread.
+- **Assignments**: what is assigned to it, then what it owns, then what is pinned to it. A person or a bot opens here.
+
+${say(
+  `To see an item in a different view, press the header of the topic. Or right-click the item and go to *Open*.`,
+  `get_item with \`size: focus\` reads an item as its view shows it. A chat gives its messages, notes give an indented tree with ids, and other items give their values. Set \`display\` with set_value (\`comments\`, \`notes\`, \`focus\` or \`assignments\`) to change how a topic opens for everyone.`,
 )}
-- An item is a person's turn when it is assigned to them. What is assigned to you is your list, and Next walks it: the longest held first, skipping what you have looked at in the last half hour. ${say(
-  `Your [Assignments](#items) (\`Ctrl+L\`) shows it, then what you own, then what is pinned to you.`,
-  `A person's search lists what is assigned to them, then what they own (items_waiting_on, next_for_human).`,
+
+Many types of item can be pinned or added to a topic: links, pull requests, files, Slack messages and channels, bots, scripts and people. ${say(
+  `[Types](#types) tells you about each type.`,
+  `The types guide (paradigm with \`page: types\`) tells you about each type. item_types gives the params of each type.`,
 )}
-- Topics, bots and scripts have an **owner**: whoever made it, if a person; else the owner of what it is in. It is who the item goes back to when a bot lets go of it${say('', ' (an `owns` link; set_owner changes it)')}.
-- Topics don't depend on each other. To wait on something, hand the topic to a script (below).
-- Anything can be **closed**${say(` (*Close* in its right pane, or \`Ctrl+Enter\` twice in its chat)`, ' (close_item)')}. Closing means exactly this, and nothing else: its owner and all its assignees are taken off it, and its open is set to false. Nothing in it changes. A closed bot or script has no owner, so nothing runs it. ${say(
-  `*Reopen* sets it open again and makes you its owner and assignee.`,
+
+## 3. Act
+
+Do the work in the app when you can. Then the next person can see what you did.
+
+- **Write in the chat.** ${say(
+  `Type in the box at the bottom, and press \`Enter\` to send. Press \`Tab\` to add a different thing: an open topic, a script, and so on. You can also speak: the record button uses [Deepgram](#integrations).`,
+  `Use add_items on the topic to add a comment (a topic with only text), a script, or an open topic.`,
+)}
+- **Change the notes.** ${say(
+  `In the tree, \`Enter\` adds a note, \`?\` adds an open note, and \`/\` adds a heading. \`e\` edits a note. \`w\` and \`s\` move it up and down.`,
+  `Use add_items with \`via: notes\` to add to the tree. Write a plan or a write-up as notes, one point to each note, and set the topic's display to notes. Then say what you did in its comments.`,
+)}
+- **Split off work.** Add an open topic in the chat. It is pinned to the topic as you make it. It does not block the topic.${say('', ' With `detached: true`, it goes in no topic.')}
+- **Pin what will help later.** Attach the item itself, not only a mention of it. ${say(
+  `Right-click any item and choose *Pin to*.`,
+  `Use the pin action, or \`pin: true\` on an item in add_items. get_item lists an item's pins, and where it is pinned (pinnedIn).`,
+)}
+- **Run a type's scripts.** A script that a type owns shows in the right pane of each item of that type. ${say(
+  `Press it to run it on the item.`,
+  `To make one, set_owner a script to the type's name ("topic", "bot"…).`,
+)}
+
+Changes outside the app (a post, a merge, a message) are not safe. ${say(
+  `Bots make them only when a person asks.`,
+  `Make them only when a person asks you to.`,
+)}
+
+## 4. Hand it on, or close it
+
+When you have done your part, give the item to the next person, bot or script. Do not keep an item that someone else can move on.${say(
+  '',
+  ' Leave a person only what nobody else can answer, as one direct question.',
+)}
+
+- **Assign it.** ${say(
+  `Use the top right of the topic, or right-click it and choose *Assign to*. Or write \`@name\` in its chat.`,
+  `Use the assign action (an \`assignees\` link from the item), or \`assign\` in your update. People sign in by username (list_people).`,
+)} You can assign an item to more than one person, bot or script.
+- **To a person**: it goes on their list, and Next shows it to them.
+- **To a bot**: a bot is a Claude session with a name, instructions and a folder of its own. It does the work and then hands the item on. ${say(`[Bots](#bots) shows each bot and what it does now.`, `list_bots lists the bots.`)}
+- **To a script**: a script is a bot without a model. It runs JavaScript, and it costs nothing to run. Use a script to wait for something: for example, a Slack message in a channel, or a pull request that merges. Also use one for a repeated task that needs no model. Make one script, and give it all the topics of that kind.${say(
+  ' [Integrations](#integrations) shows what bots and scripts can see outside the app.',
+  ' The integrations guide (paradigm with `page: integrations`) shows what bots and scripts can see outside the app. item_types gives the shape of a script. run_script runs code one time, now.',
+)}
+
+**When bots and scripts wake.** A bot or a script works on one item at a time. Each minute, the app runs it on the first item that is due, oldest first. An item is due when:
+
+- someone gave it the item, or gave it again;
+- someone wrote in the item while it was running on it;
+- its cycle has passed since its last run on the item (30 minutes, or its cycle minutes; never with 0);
+- ${say(`you pressed *Wake now* on its page, or wrote in its own chat.`, `a person woke it from its page, or wrote in its own chat.`)}
+
+The app runs the bots and scripts that the person signed in owns, and the ones that their bots own. When a run ends, the item goes where the run said. ${say(
+  `If the run did not say, the item goes back to its owner.`,
+  `If your update has no \`assign\`, the item goes back to its owner. To keep it, assign it to yourself. You then come back to it after your cycle.`,
+)}
+
+**Owners.** Each topic, bot and script has an owner. The owner is the person who made it, or else the owner of the item it is in. The owner gets the item back when a bot lets go of it.${say('', ' The owner is an `owns` link. set_owner changes it.')}
+
+**Close it** when there is nothing more to do. ${say(
+  `Press *Close* in its right pane, or press \`Ctrl+Enter\` two times in its chat.`,
+  `Use close_item, only when a person asks.`,
+)} Closing removes its owner and all its assignees, and sets open to false. Nothing in it changes. A closed bot or script has no owner, so nothing runs it. ${say(
+  `*Reopen* opens it again, and makes you its owner and assignee.`,
   `Only a person reopens an item.`,
 )}
 
-## Comments, notes and pins
+## Other things
 
-A topic holds two lists, and has things pinned beside it.
-
-- **Comments** are its chat: what is said in it, in order. It is the history of the topic: who said what, what was added, who it was handed to. ${say(
-  `Type in the box at the bottom; \`Tab\` changes what is added (a comment, an open topic to split work off, a script…).`,
-  `To make something appear in a topic's chat, add it in the topic (add_items): a comment (a topic with just text), a script, an open topic to split work off (it shows as a card here and blocks nothing; \`detached: true\` files it on its own).`,
-)}
-- **Notes** are a tree of topics: what the topic knows, kept in order and edited in place, rather than said over time. A plan, a checklist (open notes are its boxes), a write-up to comment on point by point. ${say(
-  `A topic's display says which of the two its view opens on: press its header to switch. In the tree, \`Enter\` adds a note, \`?\` an open one, \`/\` a heading, \`e\` edits, \`w\` and \`s\` move up and down.`,
-  `A topic's \`display\` says which its view shows; add_items with \`via: notes\` adds to the tree.`,
-)}
-- **Pins** are what is useful in actioning a topic, shown beside it: an open topic made in it (pinned as it is made), a pull request or preview link, a file, the topic it came from. ${say(
-  `Right-click anything and choose *Pin to*.`,
-  `The pin action, or \`pin: true\` on an item in add_items. get_item lists its pins and where it is pinned (pinnedIn).`,
-)} Attach content where it will be wanted later, rather than only mentioning it.
-
-## Views
-
-Every item can be looked at in a few ways; its display says which it opens on, and its type decides when it doesn't say.
-
-- **Comments**: its chat. A topic opens here, and so does a script.
-- **Notes**: its tree. For a plan or a write-up, set a topic's display to notes.
-- **Focus**: its type's own view: a file shown whole, a pull request's page, a link, a Slack thread.
-- **Assignments**: what is assigned to it, then what it owns, then what is pinned to it. A person or a bot opens here: your [Assignments](#items) is yours.
-${say(
-  `- **Debug** and **Edit log**: everything it holds, and every change to it.
-
-Press a topic's header, or right-click anything and hover *Open*, to see it another way.`,
-  `
-get_item with \`size: focus\` reads an item as it opens: a chat as its messages, notes as an indented tree with ids, anything else as its values. set_value on \`display\` (\`comments\`, \`notes\`, \`focus\` or \`assignments\`) changes how a topic opens for everyone. Write a plan or a write-up to be commented on as notes, point by point, and show the topic as notes; say what you did in its comments.`,
-)}
-
-## Bots and scripts
-
-- A **bot** is a Claude session with a name and instructions, and a folder of its own; both last from one run to the next. ${say(`See them, and what each is doing, on [Bots](#bots).`, `list_bots lists them.`)}
-- A **script** is a bot without a model: JavaScript, with a name, given topics the same way. Use one to wait on something, or for anything repetitive that needs no LLM (a snooze, a check every 10 minutes until a branch merges). Make one once and give it every topic of its kind. It costs nothing to run. The app runs the scripts the person signed in owns, or bots they own do. A script owned by an item type is offered in the right pane of every item of that type${say(
-  ' (see [Types](#types)).',
-  ` (set_owner to "topic", "bot"…). run_script runs code once, now. See item_types for a script's exact shape.`,
-)}
-
-**When they wake.** Bots and scripts work one item at a time. Every minute, each is run on the first item assigned to it, the longest held first, that is due:
-
-- it was just given it, or given it again by someone else;
-- someone wrote in it while it was running on it (it didn't see that, so it keeps the topic and runs again);
-- its cycle has passed since it last ran on it: 30 minutes unless its cycle minutes say otherwise, and never with 0;
-- ${say(`you pressed *Wake now* on its page, or wrote in its own chat (which assigns it to itself).`, `it was woken from its page, or someone wrote in its own chat (which assigns it to itself).`)}
-
-A run is told what is new in the item since it last ran on it. When it ends, the item goes where the run said; ${say(
-  `if it said nowhere, it goes back to its owner.`,
-  `with no \`assign\` in your update, it goes back to its owner. Assign it to yourself to keep it, and you come back to it after your cycle.`,
-)}
-
-## The kinds of item
-
-- **topic**: what is said, a thing to be done, a note.
-- **bot**: a Claude session that works on what is assigned to it.
-- **script**: a bot without a model, running JavaScript.
-- **user**: a person who signs in.
-- **link**, **github_pr**, **file**, **slack_message**, **slack_channel**: things from outside, pulled in to sit in a topic or be pinned beside it.
-
-${say(`[Types](#types) says more of each, with the actions each has.`, `The types guide (paradigm with \`page: types\`) says more of each; item_types gives each one's params in full.`)}
-
-## The world outside
-
-Changing anything outside this app (posting, merging, sending) is unsafe: ${say(
-  `bots do it only when a person has asked them to. What the app reaches outside (GitHub, Slack, Claude, Deepgram) is on [Integrations](#integrations).`,
-  `do it only when a person has asked for it. The integrations guide (paradigm with \`page: integrations\`) says what the app reaches outside and which tools are unsafe. The app's settings that bots may change (how many bots and scripts run at once, integrations' setup such as the GitHub default repo): settings lists them, set_setting changes one. Secrets and how the app is reached are not among them.`,
-)}
+These parts of the app do not fit one of the four steps yet. We will move each one into a step, or take it out of the app.
 
 ${say(
-  `## Getting around
+  `- The [Edit log](#log) shows each change, and who made it. The *Debug* view shows all that an item holds.
+- The app also runs on your phone: see [Phone](#phone).
+- Other apps can connect to YAWN as an MCP server: see [MCP](#mcp).
+- Keys:
 
 | Keys | What they do |
 | --- | --- |
-| \`Ctrl+D\` | [Next](#next): the next thing that is your turn |
-| \`Ctrl+L\` | [Assignments](#items); again, its search line |
+| \`Ctrl+D\` | [Next](#next): the next item on your list |
+| \`Ctrl+L\` | [Assignments](#items); press again for its search line |
 | \`Ctrl+F\` | Find in the view |
 | \`Ctrl+W\`, \`Alt+Left\` | Back |
 | \`Alt+Right\` | Forward |
-| \`Enter\` | Send what is typed in a chat |
+| \`Enter\` | Send what you typed in a chat |
 | \`Tab\` | Change what the chat adds |
-| \`Ctrl+Enter\` twice | Close the topic |
-| Right-click | Open, copy, pin, assign or act on anything |
-
-Everything that has changed, and who changed it, is on the [Edit log](#log). The app also runs on your phone: see [Phone](#phone).`,
-  `## Finding work
-
-items_waiting_on (a username, bot, a bot's name, or a blocker type), next_for_human, list_items, get_item. activity_log and edit_log say what has happened.`,
+| \`Ctrl+Enter\` two times | Close the topic |
+| Right-click | Open, copy, pin, assign, or act on any item |`,
+  `- activity_log and edit_log show what has happened.
+- settings lists the app's settings that bots can change (for example, how many bots and scripts run at one time, or the GitHub default repo). set_setting changes one. Secrets, and how people reach the app, are not in the list.`,
 )}
 `
 }
 
 function integrations(say: Say): string {
-  return `## What the app reaches outside
+  return `${say(
+  'This guide is part of step 4 on [Home](#home), *Hand it on*. Bots and scripts use these integrations to watch and act outside the app: for example, a script that waits for a pull request to merge.',
+  "This guide is part of step 4 of the paradigm, *Hand it on*. Bots and scripts use these integrations to watch and act outside the app: for example, a script that waits for a pull request to merge.",
+)}
+
+## What the app reaches outside
 
 Each integration is set up once, ${say('on this page', 'by a person on the Integrations page')}. Reading through one is always fine; changing anything outside (a comment, a merge, an issue) happens only when a person has asked for it${say(', and bots are told so', ': those tools are marked unsafe')}.
 
@@ -193,7 +224,12 @@ The same app, on your phone, over Tailscale: set it up on [Phone](#phone).`,
 }
 
 function types(say: Say): string {
-  return `## Items and their types
+  return `${say(
+  'This guide is part of step 2 on [Home](#home), *Read what you need*. It tells you about each type of item that you can find in a topic, or pinned beside it.',
+  'This guide is part of step 2 of the paradigm, *Read what you need*. It tells you about each type of item that you can find in a topic, or pinned beside it.',
+)}
+
+## Items and their types
 
 Everything in the app is an item, and every item has a type. What is the same for all of them: who made it and when, who owns it and who has it, whether it is open or closed, its comments, notes and pins, and the views it can be seen in. What differs is what it holds, how it is shown, and what can be done to it.
 
