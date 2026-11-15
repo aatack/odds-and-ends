@@ -43,6 +43,14 @@ const ADDABLE: Partial<Record<SectionId, { verb: string; title: string }>> = {
   pinned: { verb: 'Pin', title: 'Pin something' },
 }
 
+/** How well a section's rows answer what is typed: 0 one is named just that, 1 one says it whole, 2 neither. */
+const tierOf = (names: string[], text: string): number => {
+  const t = text.trim().toLowerCase()
+  if (!t) return 2
+  const lower = names.map((n) => n.toLowerCase().replace(/ \(you\)$/, ''))
+  return lower.some((n) => n === t) ? 0 : lower.some((n) => n.includes(t)) ? 1 : 2
+}
+
 /**
  * The finder, one view wherever items are found: home, an item's Assignments, and every item picker (`ItemPicker`,
  * this in a modal). Its sections (`FINDER_SECTIONS`, see `SECTIONS`) are the same everywhere: what Back goes through
@@ -160,7 +168,7 @@ export function ItemsList(props: {
     const shownBots = expanded.includes('bots') ? allBots : allBots.slice(0, perSection)
     const botLines: Line[] = shownBots.map((bot) => ({ key: `bot:${bot.id}`, bot }))
     if (shownBots.length < allBots.length) botLines.push({ key: 'bots:more', more: 'bots', n: allBots.length - shownBots.length })
-    const botGroup = allBots.length ? [{ id: 'bots', label: 'People and bots', count: allBots.length, lines: botLines, add: false }] : []
+    const botGroup = allBots.length ? [{ id: 'bots', label: 'People and bots', count: allBots.length, lines: botLines, add: false, tier: tierOf(allBots.map((b) => b.name), text) }] : []
     const itemGroups = sections
       .map((id) => {
         // An item shows in every section that has it (pinned to you and assigned to you, say). Everything else is only
@@ -172,11 +180,13 @@ export function ItemsList(props: {
         const shown = expanded.includes(id) ? all : all.slice(0, perSection)
         const lines: Line[] = shown.map((item) => ({ key: `${id}:${item.id}`, item }))
         if (shown.length < all.length) lines.push({ key: `${id}:more`, more: id, n: all.length - shown.length })
-        return { id, label: SECTIONS[id].label, count: all.length, lines, add: !!act && !!ADDABLE[id] }
+        return { id, label: SECTIONS[id].label, count: all.length, lines, add: !!act && !!ADDABLE[id], tier: tierOf(all.map((i) => i.title), text) }
       })
       // A link section that can be added to shows even when empty, but not while something is typed.
       .filter((g) => g.count || (g.add && !matched))
-    return [...chosenGroup, ...itemGroups, ...botGroup]
+    // While something is typed, a section with a row named just that comes first, then one with a row that says it
+    // whole, then the rest, each in its usual order (sorting is stable): a bot found by its name needs no scrolling.
+    return [...chosenGroup, ...[...itemGroups, ...botGroup].sort((a, b) => a.tier - b.tier)]
   }, [items, recent, history, extra, sections, perSection, expanded, text, bots, selected, act])
   const flat = groups.flatMap((g) => g.lines)
   const current = Math.min(at, Math.max(flat.length - 1, 0))
