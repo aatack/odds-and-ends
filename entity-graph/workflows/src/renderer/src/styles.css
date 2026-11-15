@@ -513,7 +513,7 @@ button[data-ui].link.item-ref .icon { width: 13px; height: 13px; align-self: cen
 
 /* ---- Laid out for a phone: `.mobile`, set by the views given `mobile` (App.tsx decides it, once). ---- */
 .app.mobile { display: block; }
-.app.mobile, .app.mobile .main { height: 100dvh; }
+.app.mobile, .app.mobile .main { height: var(--seen, 100dvh); }
 .app.mobile .main { padding: 0; }
 .app.mobile .content { max-width: none; }
 /* The menu's button is at the top right, in the header's place for it, so nothing covers the chat input. */

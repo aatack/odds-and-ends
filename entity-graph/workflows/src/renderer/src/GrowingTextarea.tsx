@@ -13,8 +13,11 @@ export const GrowingTextarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttri
     const style = getComputedStyle(el)
     const line = parseFloat(style.lineHeight) || 20
     const pad = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+    const was = el.offsetHeight
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, line * MAX_LINES + pad)}px`
+    // Grown while typed in: kept in sight, not pushed under a phone's keyboard.
+    if (el.offsetHeight > was && document.activeElement === el) el.scrollIntoView({ block: 'nearest' })
   }, [props.value])
   return <textarea {...props} ref={ref} rows={1} className={`growing ${props.className ?? ''}`} />
 })

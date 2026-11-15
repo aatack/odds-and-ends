@@ -325,6 +325,8 @@ html[data-theme='demo'] body { font-size: 13px; font-weight: 400; letter-spacing
 /* The page sits as a card on the canvas, 6px in from the window. */
 html[data-theme='demo'] .app { background: var(--color-gray-50); padding: 6px; }
 html[data-theme='demo'] .main { height: calc(100vh - 12px); border-radius: 10px; background: var(--panel); box-shadow: 0 0 0 1px rgb(0 0 0 / 0.07), var(--shadow-xs); }
+/* On a phone the page is the screen: the frame's padding inside it, not added to it (which let it scroll a little). */
+html[data-theme='demo'] .app.mobile .main { height: calc(var(--seen, 100dvh) - 12px); }
 html[data-theme='demo'][data-mode='dark'] .main { box-shadow: 0 0 0 1px rgb(255 255 255 / 0.05); }
 html[data-theme='demo'] .view-title { font-size: 15px; font-weight: 500; }
 html[data-theme='demo'] button[data-ui] { border-radius: 6px; }

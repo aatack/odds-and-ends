@@ -55,6 +55,24 @@ const isMobile = () => matchMedia(NARROW).matches || matchMedia(INSTALLED).match
 /** Whether to lay the views out for a phone: a narrow screen, or the app installed as a PWA. Asked once, at the top. */
 export function useMobile(): boolean {
   const [mobile, setMobile] = useState(isMobile)
+  // The app is as tall as what can be seen (`--seen`): above a phone's keyboard while it is up, so the input at the
+  // bottom grows up from it, not down under it; and the page is never scrolled away from its top.
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!mobile || !vv) return
+    const fit = () => {
+      document.documentElement.style.setProperty('--seen', `${vv.height}px`)
+      if (window.scrollY) window.scrollTo(0, 0)
+    }
+    fit()
+    vv.addEventListener('resize', fit)
+    vv.addEventListener('scroll', fit)
+    return () => {
+      vv.removeEventListener('resize', fit)
+      vv.removeEventListener('scroll', fit)
+      document.documentElement.style.removeProperty('--seen')
+    }
+  }, [mobile])
   useEffect(() => {
     const queries = [matchMedia(NARROW), matchMedia(INSTALLED)]
     const update = () => setMobile(isMobile())
