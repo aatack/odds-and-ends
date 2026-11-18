@@ -482,8 +482,13 @@ export interface WorkflowsAPI {
   signIn: (username: string) => Promise<User>
   /** Who the calls from here on are made as (kept by the preload, sent with each call). */
   setUser: (username: string | null) => void
-  /** Opens a source: a file (made if it is not there; `~/` is the home folder), on a backend of its own. Answers its absolute path. */
-  openSource: (path: string) => Promise<string>
+  /**
+   * Opens a source and answers what the window keeps for it. A file (made if it is not there; `~/` is the home folder)
+   * opens a backend of its own and answers its absolute path. In the window a URL (http/https) opens a remote backend
+   * reached by `token` (the server's phone token), kept by the main process per URL so a later open needs none, and
+   * answers the URL. The browser (the phone) ignores `token` here; its token is `setToken`.
+   */
+  openSource: (path: string, token?: string) => Promise<string>
   /** Lets go of the source open now (its backend stops, if the app started it). Over HTTP, forgets the token. */
   closeSource: () => Promise<void>
   /**

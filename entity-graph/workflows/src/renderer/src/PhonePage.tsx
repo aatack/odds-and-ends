@@ -1,8 +1,10 @@
+import { useAtomValue } from 'jotai'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { PhoneView } from '../../shared/types'
 import { Copyable } from './Copy'
 import { Form } from './forms'
 import { encodeQr } from './helpers/qr'
+import { sourceAtom } from './people'
 import { api } from './useWorkflows'
 
 /** Text as a QR code, dark on white whatever the theme, so a camera reads it. */
@@ -42,6 +44,10 @@ function Step({ n, title, done, children }: { n: number; title: string; done?: b
  * access.
  */
 export function PhonePage({ mobile }: { mobile: boolean }) {
+  // A remote source's phone settings (the token, the tailnet, the ports) live on the server, which refuses them from
+  // here (PHONE_REFUSED): this page changes them only on the machine YAWN runs on.
+  const source = useAtomValue(sourceAtom)
+  const remote = !!source && /^https?:\/\//i.test(source)
   const [view, setView] = useState<PhoneView | null>(null)
   const [error, setError] = useState<string | null>(null)
   // What went wrong serving it (the box, the ports), shown in that step rather than at the top.
@@ -55,7 +61,9 @@ export function PhonePage({ mobile }: { mobile: boolean }) {
     setPort(String(v.port))
     setTailnetPort(String(v.tailnetPort))
   }, [])
-  useEffect(() => void refresh().catch((e) => setError((e as Error).message)), [refresh])
+  useEffect(() => {
+    if (!remote) void refresh().catch((e) => setError((e as Error).message))
+  }, [refresh, remote])
 
   const act = async (fn: () => Promise<unknown>, show = setError) => {
     setError(null)
@@ -70,6 +78,15 @@ export function PhonePage({ mobile }: { mobile: boolean }) {
   }
   const serveAct = (fn: () => Promise<unknown>) => act(fn, setServeError)
 
+  if (remote)
+    return (
+      <div className={`page ${mobile ? 'mobile' : ''}`}>
+        <section className="card">
+          <h2>Phone</h2>
+          <p className="muted">This source is a remote server. Its phone settings (the token, the tailnet, the ports) are changed on the machine YAWN runs on, not from here.</p>
+        </section>
+      </div>
+    )
   if (error && !view) return <div className="error">{error}</div>
   if (!view) return <div className="muted">Loading…</div>
   // The link carries the token after the #, which the browser never sends: opened, it signs the phone in.

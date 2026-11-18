@@ -1,16 +1,55 @@
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, clipboard, ipcMain, session, shell, type WebContents } from 'electron'
-import { sourceFile } from '../backend/info'
-import { backend, type Backend } from './backend'
+import { app, BrowserWindow, clipboard, ipcMain, safeStorage, session, shell, type WebContents } from 'electron'
+import { isRemote, sourceFile } from '../backend/info'
+import { backend, remote, type Backend } from './backend'
 
 // A profile of its own (local storage, window state), apart from the older app's, so the two run side by side.
 app.setPath('userData', join(app.getPath('appData'), 'workflows-egdb'))
 
 /** The session a link's page is shown in (LinkFocus's webview). */
 const LINKS = 'persist:links'
+
+// A remote source's phone token, kept per URL so the next start opens it without asking again. In the app's userData
+// folder, mode 0600; encrypted with the OS keychain (safeStorage) where it is available, else plain (a `plain:`/`enc:`
+// marker says which). The window never receives it back: only the URL it is kept under.
+const remoteTokensFile = (): string => join(app.getPath('userData'), 'remote.json')
+const readTokens = (): Record<string, string> => {
+  try {
+    return JSON.parse(readFileSync(remoteTokensFile(), 'utf8')) as Record<string, string>
+  } catch {
+    return {}
+  }
+}
+const writeTokens = (all: Record<string, string>): void => {
+  const file = remoteTokensFile()
+  writeFileSync(file, JSON.stringify(all), { mode: 0o600 })
+  // The mode above only takes on a new file; make sure of it on one that was there already.
+  chmodSync(file, 0o600)
+}
+const readToken = (url: string): string | null => {
+  const stored = readTokens()[url]
+  if (stored?.startsWith('enc:') && safeStorage.isEncryptionAvailable()) {
+    try {
+      return safeStorage.decryptString(Buffer.from(stored.slice(4), 'base64'))
+    } catch {
+      return null
+    }
+  }
+  return stored?.startsWith('plain:') ? stored.slice(6) : null
+}
+const saveToken = (url: string, token: string): void => {
+  writeTokens({ ...readTokens(), [url]: safeStorage.isEncryptionAvailable() ? `enc:${safeStorage.encryptString(token).toString('base64')}` : `plain:${token}` })
+}
+const forgetToken = (url: string): void => {
+  const all = readTokens()
+  if (!(url in all)) return
+  delete all[url]
+  writeTokens(all)
+}
 
 /**
  * Ctrl+W (rather than closing the window, as the default menu would), Alt+Left and Ctrl+Shift+Tab take the top view off
@@ -69,15 +108,43 @@ async function main(): Promise<void> {
   })
 
   let current: Backend | null = null
-  /** Opens a source (made if it is not there), letting go of the one open before; answers its file as an absolute path. */
-  ipcMain.handle('openSource', async (_e, typed: string) => {
+  const watch = (opened: Backend): void => {
+    opened.onChange(() => current === opened && !win.isDestroyed() && win.webContents.send('changed'))
+    current = opened
+  }
+  /**
+   * Opens a source, letting go of the one open before; answers what the window keeps as its source. A file path (made
+   * if it is not there) opens a backend of its own; a URL (http/https) opens a remote one, reached by `token` — kept
+   * here per URL (the window never receives it back), so a later open with no token reuses it. A refused token forgets
+   * the kept one and is reported, so the window can ask for it again.
+   */
+  ipcMain.handle('openSource', async (_e, typed: string, token?: string) => {
+    if (isRemote(typed)) {
+      const url = typed.trim().replace(/\/$/, '')
+      if (current?.file === url) return url
+      await current?.close()
+      current = null
+      const using = token ?? readToken(url)
+      if (using == null) throw new Error('No token for this server yet: paste the phone token.')
+      let opened: Backend
+      try {
+        opened = await remote(url, using)
+      } catch (e) {
+        // A kept token the server now refuses: forget it, so the next open asks for one afresh.
+        if (token === undefined && /token is refused/i.test((e as Error).message)) forgetToken(url)
+        throw e
+      }
+      saveToken(url, using)
+      watch(opened)
+      console.log(`workflows: ${url}, remote backend`)
+      return url
+    }
     const file = sourceFile(typed)
     if (current?.file === file) return file
     await current?.close()
     current = null
     const opened = await backend(file)
-    opened.onChange(() => current === opened && !win.isDestroyed() && win.webContents.send('changed'))
-    current = opened
+    watch(opened)
     console.log(`workflows: ${file}, backend at ${opened.info.url} (${opened.owned ? 'started by the app' : 'already running'})`)
     return file
   })
@@ -95,8 +162,12 @@ async function main(): Promise<void> {
   // elsewhere as its path, as text.
   ipcMain.handle('copyFile', async (_e, itemId: string, user: string | null) => {
     if (!current) throw new Error('Open a source first.')
-    const text = (await current.call('fileText', [itemId], user)) as { path: string | null; missing: boolean }
-    let path = text.path && !text.missing ? text.path : null
+    // A remote source's path names nothing on this machine, so always take the file's bytes; a local one uses its path.
+    let path: string | null = null
+    if (!isRemote(current.file)) {
+      const text = (await current.call('fileText', [itemId], user)) as { path: string | null; missing: boolean }
+      path = text.path && !text.missing ? text.path : null
+    }
     if (!path) {
       const { name, base64 } = (await current.call('fileData', [itemId], user)) as { name: string; base64: string }
       const dir = join(tmpdir(), 'yawn-clipboard', itemId)

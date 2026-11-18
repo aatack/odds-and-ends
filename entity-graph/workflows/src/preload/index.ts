@@ -15,7 +15,7 @@ const setUser = (u: string | null) => {
   user = u
 }
 
-const openSource = (path: string) => ipcRenderer.invoke('openSource', path)
+const openSource = (path: string, token?: string) => ipcRenderer.invoke('openSource', path, token)
 const closeSource = () => ipcRenderer.invoke('closeSource')
 const copyFile = (itemId: string) => ipcRenderer.invoke('copyFile', itemId, user)
 

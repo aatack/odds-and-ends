@@ -136,6 +136,18 @@ window: there `window.workflows` is the preload's, as always.
   differently where a phone needs it: nothing is focused for the person (it would raise the keyboard), the chat
   input's icon is tapped to change what is sent and Enter is a new line. Without `mobile` nothing changes: a new view takes the prop and keeps the desktop as it was.
 
+**The remote server.** The window opens a backend running elsewhere (a headless host) instead of a local file: on the
+Start screen the Source is a URL (`https://host.tailnet.ts.net:8443/`, `http://127.0.0.1:47392/`) and a Token field
+shows for the server's phone token (`--print-phone-token`, or the Phone page). The window reaches the server's phone
+listener over Tailscale, as a phone does, so it is the phone's transport that answers: `src/main/backend.ts` `remote()`
+returns the same `Backend` (not owned; closing it only stops listening), reusing the local one's `call` and `/events`
+reconnect, and checks the URL and token on opening by asking `source`. The token is kept by the main process per URL
+(`remote.json` in the app's userData, mode 0600, encrypted with the OS keychain where there is one), so the next start
+opens straight away; the window never receives it back, and `closeSource` keeps it. Two limits: the Phone page's own
+settings are `PHONE_REFUSED` by the server (they are changed on the machine it runs on, and the page says so when the
+source is remote), and `copyFile` always sends the file's bytes, since the server's path names nothing here.
+`src/backend/info.ts` `isRemote(typed)` is the URL test, shared with Node (the renderer matches `/^https?:\/\//`).
+
 **Setting it up** (the person does this; agents never run `tailscale`'s writes: the app runs them only on the person's
 own press on the Phone page, which the phone itself may not call). The Phone page is these steps, numbered, each
 holding what it needs and turning to a ✓ once the app can see it is done:

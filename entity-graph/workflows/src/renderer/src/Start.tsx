@@ -15,12 +15,18 @@ export interface Session {
  */
 export async function begin(s: Session & { token?: string }): Promise<Session> {
   if (s.token !== undefined) api().setToken?.(s.token)
-  // Both at once: on the phone each is a trip over the network.
-  const [file, user] = await Promise.all([api().openSource(s.source), api().signIn(s.user)])
+  // In the window a URL source opens a remote backend; its token goes with it to the main process (kept there, never
+  // sent back), so the calls after it (signIn included) carry it. A file source, and the browser (the phone), open as
+  // before. Both at once: on the phone each is a trip over the network.
+  const opening = !inBrowser && looksRemote(s.source) ? api().openSource(s.source, s.token || undefined) : api().openSource(s.source)
+  const [file, user] = await Promise.all([opening, api().signIn(s.user)])
   api().setUser(user.id)
   // In a browser the source is the backend's, which it says.
   return { user: user.id, source: inBrowser ? file : s.source }
 }
+
+/** Whether a typed source is a remote backend's URL rather than a file path (src/backend/info.ts is the same, for Node). */
+const looksRemote = (s: string): boolean => /^https?:\/\//i.test(s.trim())
 
 // A link from the Phone page brings its token: taken as the page loads, before anything asks.
 let linked = inBrowser ? tokenFromLink() : null
@@ -50,7 +56,7 @@ export function Start({ kept, onBegin }: { kept: Partial<Session>; onBegin: (s: 
     setError(null)
     setBusy(true)
     try {
-      onBegin(await begin(inBrowser ? { ...s, token } : s))
+      onBegin(await begin({ ...s, token }))
     } catch (e) {
       setError((e as Error).message.replace(/^Error invoking remote method '\w+': (Error: )?/, ''))
       setBusy(false)
@@ -63,6 +69,9 @@ export function Start({ kept, onBegin }: { kept: Partial<Session>; onBegin: (s: 
     tried.current = true
     void go({ user: kept.user, source: kept.source ?? '' })
   })
+  // In the window a URL source opens a remote backend and shows a Token field; a token already kept there (from a last
+  // start) lets it open with none typed, so the token is not required to press Open.
+  const remoteSource = !inBrowser && looksRemote(source)
   const ready = user.trim() && (inBrowser ? token.trim() : source.trim()) && !busy
   const field = (label: string, value: string, set: (v: string) => void, placeholder: string, autoFocus: boolean, secret = false) => (
     <label className="start-field">
@@ -99,8 +108,15 @@ export function Start({ kept, onBegin }: { kept: Partial<Session>; onBegin: (s: 
             </>
           ) : (
             <>
-              {field('Source', source, setSource, 'e.g. ~/tasks/tasks.sqlite', !!kept.user)}
-              <p className="muted">A source that is not there is made. Someone new is made as they first sign in.</p>
+              {field('Source', source, setSource, 'e.g. ~/tasks/tasks.sqlite or https://host.ts.net:8443/', !!kept.user)}
+              {remoteSource ? (
+                <>
+                  {field('Token', token, setToken, 'The phone token of the server', false, true)}
+                  <p className="muted">The phone token of the server: run the server with --print-phone-token, or see the Phone page on it.</p>
+                </>
+              ) : (
+                <p className="muted">A source that is not there is made. Someone new is made as they first sign in.</p>
+              )}
             </>
           )}
           <div className="buttons">

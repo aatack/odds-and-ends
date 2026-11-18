@@ -9,6 +9,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
+/** Whether a typed source is a remote backend's URL (http/https), not a file path on this machine. */
+export function isRemote(typed: string): boolean {
+  return /^https?:\/\//i.test(typed.trim())
+}
+
 /** A source's file as typed (`~/` is the home folder; anything else is from the current folder), as an absolute path. */
 export function sourceFile(typed: string): string {
   const t = typed.trim()

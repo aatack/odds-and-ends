@@ -5,7 +5,7 @@
 
 import { fork } from 'node:child_process'
 import { join } from 'node:path'
-import { dataDirOf, runningBackend, type BackendInfo } from '../backend/info'
+import { dataDirOf, isRemote, runningBackend, type BackendInfo } from '../backend/info'
 
 export interface Backend {
   /** The source's file, as an absolute path. */
@@ -49,6 +49,34 @@ export async function backend(file: string): Promise<Backend> {
       child.send('stop')
     })
   return connect(file, info, true, stop)
+}
+
+/**
+ * A backend already running elsewhere (a headless host), reached by its URL (its phone listener, which
+ * `tailscale serve` takes to the tailnet) and the phone token, as the phone reaches it. Not owned: closing it only
+ * stops listening. It behaves as the window's own backend otherwise, so the same calls and the same change stream work.
+ *
+ * Limits of a remote source: the Phone page's settings (the token, the tailnet, the ports) are refused from here
+ * (PHONE_REFUSED) — they are changed on the server; and `copyFile` always sends the file's bytes, since the server's
+ * path names nothing on this machine. The token is kept by the main process (src/main/index.ts), never here.
+ */
+export async function remote(typed: string, token: string): Promise<Backend> {
+  const url = typed.trim().replace(/\/$/, '')
+  if (!isRemote(url)) throw new Error('A remote source is a URL: https://… or http://…')
+  const made = connect(url, { url, token, pid: 0 }, false, async () => {})
+  // Check the URL and the token at once, as the browser transport does on opening (transport.ts): ask which source it
+  // is. The status says which plain error to give; a wrong host or a down one fails the fetch itself.
+  let res: Response
+  try {
+    res = await fetch(`${url}/rpc/source`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: '[]' })
+  } catch {
+    throw new Error(`No backend answers at ${url}.`)
+  }
+  if (res.status === 401) throw new Error('The token is refused.')
+  const out = (await res.json().catch(() => null)) as { result?: unknown; error?: string } | null
+  // The tailnet's 403 message, or anything else the backend says, passes through as it is.
+  if (!out || out.error) throw new Error(out?.error ?? `No backend answers at ${url}.`)
+  return made
 }
 
 function connect(file: string, info: BackendInfo, owned: boolean, stop: () => Promise<void>): Backend {
