@@ -12,6 +12,13 @@ The kit that does the work lives in `deploy/`:
 `install.sh` (sets the server up), `workflows.service` (keeps the backend running),
 `backup.sh` + its timer (a daily copy), and `doctor.sh` (checks everything is OK).
 
+**What runs where.** The backend listens on **port 47392** — the phone listener,
+on loopback (`127.0.0.1`) only, reached from outside only through `tailscale
+serve`. The **MCP** server is on **port 47391**, loopback only. The store
+(`egdb-server`) listens on loopback on a **random** port the backend picks. That
+is all that listens: nothing is open to the public internet, which is why the
+Hetzner firewall stays closed and Tailscale is the only way in.
+
 ---
 
 ## 1. Make a server at Hetzner
@@ -126,7 +133,11 @@ If you already have a store on your laptop and want the server to take it over:
 
 ## 7. Updating
 
-The bots can change the code, but to pull a new version yourself:
+The bots can change the code, but to pull a new version yourself. Either way
+`--update` rebuilds the app and the store and restarts the service, then waits
+for `/health` to answer.
+
+**Way A — update the install in place:**
 
 ```sh
 cd /opt/workflows
@@ -134,8 +145,17 @@ sudo -u workflows git pull
 sudo entity-graph/workflows/deploy/install.sh --update
 ```
 
-`--update` rebuilds the app and the store from the checkout and restarts the
-service. (The `git pull` is yours to run; the installer does the rest.)
+**Way B — update from your own clone:** pull in a checkout anywhere, then run
+`--update` from it. Because the checkout is not `/opt/workflows`, the installer
+first copies it over `/opt/workflows` (the same copy a first install does, so
+`node_modules`, `out` and the Rust `target` in the install are kept), then
+rebuilds and restarts:
+
+```sh
+cd ~/workflows-src
+git pull
+sudo entity-graph/workflows/deploy/install.sh --update
+```
 
 ## 8. Backup and restore
 
@@ -157,13 +177,18 @@ ownership, start again:
 
 ```sh
 sudo systemctl stop workflows
+mkdir -p /tmp/restore
 sudo tar -xzf /var/backups/workflows/workflows-<stamp>.tar.gz -C /tmp/restore
+sudo mkdir -p /var/lib/workflows/store.sqlite.data
 sudo cp -a /tmp/restore/store.sqlite       /var/lib/workflows/store.sqlite
 sudo cp -a /tmp/restore/data/secret.key    /var/lib/workflows/store.sqlite.data/secret.key
 sudo cp -a /tmp/restore/data/bots          /var/lib/workflows/store.sqlite.data/
 sudo chown -R workflows:workflows /var/lib/workflows
 sudo systemctl start workflows
 ```
+
+The archive holds `store.sqlite` and a `data/` folder (`data/secret.key`,
+`data/bots/`); the commands above match that layout.
 
 ## 9. Security notes
 

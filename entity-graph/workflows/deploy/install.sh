@@ -39,7 +39,8 @@ done
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SRCROOT=$(cd "$SCRIPT_DIR/../../.." && pwd)  # deploy -> workflows -> entity-graph -> repo root
 
-echo "==> YAWN install (prefix $PREFIX, user $SVCUSER)${UPDATE:+ [update]}"
+[ "$UPDATE" -eq 1 ] && tag=" [update]" || tag=""
+echo "==> YAWN install (prefix $PREFIX, user $SVCUSER)$tag"
 
 # Run a command as the workflows user, with the env a build needs (its rustup
 # cargo on PATH, Electron's binary download skipped — the server never starts it).
@@ -60,6 +61,39 @@ build_app() {
   run_as_workflows "cd '$APP' && npm run egdb:build"
 }
 
+# Copy this checkout to $PREFIX (unless we are already running from there),
+# excluding build output and deps. Never deletes anything in the target, so a
+# running install keeps its node_modules/out while the sources are refreshed.
+# Used by both a first install and --update from a checkout elsewhere.
+copy_checkout() {
+  if [ "$SRCROOT" != "$PREFIX" ]; then
+    echo "==> Copying checkout $SRCROOT -> $PREFIX (excluding node_modules/out/target)"
+    mkdir -p "$PREFIX"
+    rsync -a \
+      --exclude 'node_modules/' --exclude 'out/' --exclude '.run/' \
+      --exclude 'egdb/target/' \
+      "$SRCROOT"/ "$PREFIX"/
+  else
+    echo "==> Running from $PREFIX; no copy needed"
+  fi
+  chown -R "$SVCUSER:$SVCUSER" "$PREFIX"
+}
+
+# Wait up to ~20 s for the phone listener's /health to answer ok, so the caller
+# knows the restarted service really came up. Prints OK, or a journalctl hint.
+wait_health() {
+  command -v curl >/dev/null 2>&1 || { echo "    (curl missing; skipping /health check)"; return 0; }
+  echo -n "==> Waiting for /health on 127.0.0.1:47392 "
+  for _ in $(seq 1 20); do
+    if curl -fsS "http://127.0.0.1:47392/health" 2>/dev/null | grep -q '"ok":true'; then
+      echo "OK"; return 0
+    fi
+    echo -n "."; sleep 1
+  done
+  echo " not yet up."
+  echo "    Check the logs: journalctl -u workflows -n 30"
+}
+
 # Install (or refresh) the systemd units from the checkout.
 install_units() {
   echo "==> Installing systemd units"
@@ -71,22 +105,29 @@ install_units() {
 
 # --- --update: rebuild the checkout the user has already `git pull`ed, restart --
 if [ "$UPDATE" -eq 1 ]; then
-  [ -d "$APP" ] || { echo "No install at $APP to update. Run without --update first." >&2; exit 1; }
-  chown -R "$SVCUSER:$SVCUSER" "$PREFIX"
+  # When run from a checkout elsewhere, refresh $PREFIX from it first (same copy
+  # as a first install); when run from $PREFIX itself, this just fixes ownership.
+  if [ "$SRCROOT" != "$PREFIX" ]; then
+    copy_checkout
+  else
+    [ -d "$APP" ] || { echo "No install at $APP to update. Run without --update first." >&2; exit 1; }
+    chown -R "$SVCUSER:$SVCUSER" "$PREFIX"
+  fi
   build_app
   install_units
   echo "==> Restarting workflows.service"
   systemctl restart workflows
   systemctl --no-pager --lines=0 status workflows || true
+  wait_health
   echo "==> Update done. Check it: sudo deploy/doctor.sh"
   exit 0
 fi
 
 # --- 1. apt packages --------------------------------------------------------
-echo "==> apt: git curl build-essential pkg-config ca-certificates sqlite3"
+echo "==> apt: git curl rsync build-essential pkg-config ca-certificates sqlite3"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y git curl build-essential pkg-config ca-certificates sqlite3
+apt-get install -y git curl rsync build-essential pkg-config ca-certificates sqlite3
 # Firewall: no changes here. Tailscale is the gate (see DEPLOY.md). If you run ufw,
 # keep inbound closed except SSH; nothing here needs an open port.
 echo "    (no firewall changes made — Tailscale is the gate; see DEPLOY.md)"
@@ -128,17 +169,7 @@ chown "$SVCUSER:$SVCUSER" "$STATE"
 chmod 0750 "$STATE"
 
 # --- copy the checkout to /opt/workflows ------------------------------------
-if [ "$SRCROOT" != "$PREFIX" ]; then
-  echo "==> Copying checkout $SRCROOT -> $PREFIX (excluding node_modules/out/target)"
-  mkdir -p "$PREFIX"
-  rsync -a \
-    --exclude 'node_modules/' --exclude 'out/' --exclude '.run/' \
-    --exclude 'egdb/target/' \
-    "$SRCROOT"/ "$PREFIX"/
-else
-  echo "==> Running from $PREFIX; no copy needed"
-fi
-chown -R "$SVCUSER:$SVCUSER" "$PREFIX"
+copy_checkout
 
 # --- 3. Rust via rustup, for the workflows user, for the build only ---------
 # Scoped to the workflows user's home (~/.cargo): a system cargo may be too old
@@ -199,6 +230,7 @@ echo "==> Enabling + starting workflows.service and the daily backup timer"
 systemctl enable --now workflows.service
 systemctl enable --now workflows-backup.timer
 systemctl --no-pager --lines=0 status workflows || true
+wait_health
 
 # --- final checklist --------------------------------------------------------
 host=$(hostname)
