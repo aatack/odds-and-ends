@@ -160,8 +160,19 @@ export class Settings {
     return token
   }
 
+  /** Keeps a given phone token (encrypted, as `regeneratePhoneToken` keeps the one it makes): for the headless backend. */
+  setPhoneToken(token: string): void {
+    this.set('phone.token', this.secrets.encrypt(token))
+  }
+
   phonePort(): number {
     return this.get('phone.port', DEFAULT_PHONE_PORT)
+  }
+
+  /** Sets the phone listener's port, checking its range: for the headless backend (the app uses `Admin.setPhonePort`). */
+  setPhonePort(port: number): void {
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('The phone port must be a number from 1024 to 65535.')
+    this.set('phone.port', port)
   }
 
   /** The HTTPS port `tailscale serve` takes the phone listener to, on the tailnet. */
@@ -172,6 +183,14 @@ export class Settings {
   /** Off by default: only this machine reaches the phone listener. */
   phoneTailnet(): boolean {
     return this.get('phone.tailnet', false)
+  }
+
+  /**
+   * Lets what comes through the tailnet in, or keeps it out: only the setting, no `tailscale serve` (the app's
+   * `Admin.setPhoneTailnet` runs that; the headless backend's install script does, so here it is the setting alone).
+   */
+  setPhoneTailnet(on: boolean): void {
+    this.set('phone.tailnet', on)
   }
 }
 

@@ -15,7 +15,7 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { Admin } from '../engine/admin'
 import { openStore, storeBranch } from '../engine/egdb'
 import { Engine } from '../engine/engine'
@@ -34,9 +34,24 @@ const arg = (name: string): string | undefined => {
   return i >= 0 ? process.argv[i + 1] : undefined
 }
 
+/** A flag that is just there or not (no value), such as `--tailnet`. */
+const flag = (name: string): boolean => process.argv.includes(`--${name}`)
+
+/** Whether a command is on PATH (so bots that spawn it, or the store's binary, can run): looked for, never run. */
+const onPath = (cmd: string): boolean =>
+  (process.env.PATH ?? '').split(delimiter).some((d) => d && (existsSync(join(d, cmd)) || existsSync(join(d, `${cmd}.exe`))))
+
 async function main(): Promise<void> {
   const typed = arg('file') ?? process.env.WORKFLOWS_FILE
   if (!typed) throw new Error('Which source? --file <path>, such as --file ~/tasks/tasks.sqlite.')
+  // Headless options: a flag, or its env twin; the flag wins. No --data-dir: the data folder is always <source>.data.
+  // The phone token is checked here, before anything is opened, so a short one refuses to start at once.
+  const phoneToken = arg('phone-token') ?? process.env.WORKFLOWS_PHONE_TOKEN
+  if (phoneToken !== undefined && phoneToken.length < 24)
+    throw new Error('The phone token needs at least 24 characters: --phone-token <token> (or WORKFLOWS_PHONE_TOKEN).')
+  const phonePort = arg('phone-port') ?? process.env.WORKFLOWS_PHONE_PORT
+  const tailnet = flag('tailnet') || process.env.WORKFLOWS_TAILNET === '1'
+  const printPhoneToken = flag('print-phone-token')
   const file = sourceFile(typed)
   const dir = dataDirOf(file)
   mkdirSync(dirname(file), { recursive: true })
@@ -58,6 +73,15 @@ async function main(): Promise<void> {
   const egdbTarget = { url: egdb.url, token: egdbToken, branch: await storeBranch(client) }
   const engine = new Engine({ store, dataDir: dir, secrets: keyFileSecrets(dir) })
 
+  // The headless options go through Settings (small methods, not raw keys), so the phone listener and the Phone page
+  // read them just as the app's own pages set them. --tailnet is the setting alone: the install script runs
+  // `tailscale serve` itself, not this process.
+  if (phoneToken !== undefined) engine.settings.setPhoneToken(phoneToken)
+  if (phonePort !== undefined) engine.settings.setPhonePort(Number(phonePort))
+  if (tailnet) engine.settings.setPhoneTailnet(true)
+  // The token is a secret, never logged; --print-phone-token prints it once, to stdout, for a script to pick up.
+  if (printPhoneToken) console.log(engine.settings.phoneToken())
+
   const mcp = await startMcp(engine)
   const runner = new BotRunner(engine, mcp.runUrl)
   const admin = new Admin(engine, mcp)
@@ -69,7 +93,11 @@ async function main(): Promise<void> {
   const port = await listen(server, Number(arg('port') ?? process.env.WORKFLOWS_PORT ?? 0))
   // The phone's: the built app beside this file (out/renderer), as electron-vite builds it.
   const built = join(__dirname, '../renderer')
-  const phone = await startPhone({ engine, calls: api, changes, egdb: egdbTarget, files: existsSync(join(built, 'index.html')) ? built : null })
+  const hasRenderer = existsSync(join(built, 'index.html'))
+  // Warn, but do not fail, on what a headless host needs but may lack: bots spawn `claude`, and the phone needs the build.
+  if (!onPath('claude')) log('warning: `claude` is not on PATH; bots will fail to run until it is installed.')
+  if (!hasRenderer) log(`warning: the built renderer is missing (${built}); the phone will get 404 until \`npm run build\` is run.`)
+  const phone = await startPhone({ engine, calls: api, changes, egdb: egdbTarget, files: hasRenderer ? built : null })
   admin.phone = phone
   if (phone.status().error) log(phone.status().error)
   const info: BackendInfo = { url: `http://127.0.0.1:${port}`, token, pid: process.pid }

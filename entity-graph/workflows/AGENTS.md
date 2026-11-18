@@ -50,6 +50,16 @@ running on the source (its `backend.json` says where); otherwise it starts one,
 with Electron's own Node, and stops it as it leaves the source or quits.
 `npm run backend -- --file <source>` runs one on its own (and `--port <n>`),
 which lasts while apps come and go: then restarting the app restarts no bot.
+For a headless host (no Electron), the phone options that are otherwise the
+person's on the Phone page come by flag, or its env twin (the flag wins), set
+through `Settings` at boot: `--phone-token <t>`/`WORKFLOWS_PHONE_TOKEN` (24
+characters or more, else it refuses to start), `--tailnet`/`WORKFLOWS_TAILNET=1`
+(the setting alone; the install script runs `tailscale serve`), `--phone-port
+<n>`/`WORKFLOWS_PHONE_PORT`, and `--print-phone-token` (prints it once to stdout;
+it is never otherwise logged). The data folder is always `<source>.data` (no
+`--data-dir`). At boot it warns, without failing, if `claude` is off PATH or the
+built renderer is missing. Nothing under `src/backend`, `src/engine` or
+`src/shared` may import Electron (`test/headless.mts` scans for it).
 
 The app's Electron profile is `workflows-egdb` (not the older app's `workflows`),
 and its MCP endpoint's port is 47391 by default (the older app's is 47390), so
