@@ -1,0 +1,15 @@
+# Runs deploy/backup.sh once; the timer below fires it daily.
+# Installed by deploy/install.sh to /etc/systemd/system/workflows-backup.service.
+
+[Unit]
+Description=YAWN workflows backup (store + secret.key + bots)
+# Let the backend be up so a hot `sqlite3 .backup` is consistent; not a hard dep,
+# since backup.sh falls back to stop-copy-start when sqlite3 is absent.
+Wants=workflows.service
+
+[Service]
+Type=oneshot
+# Root: it reads the workflows-owned store and may restart the service on the
+# fallback path.
+User=root
+ExecStart=/opt/workflows/entity-graph/workflows/deploy/backup.sh

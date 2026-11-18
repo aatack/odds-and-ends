@@ -170,6 +170,15 @@ holding what it needs and turning to a ✓ once the app can see it is done:
 The phone runs the build the app was started from (`.run/renderer`, which `npm start` rebuilds); the Phone page shows
 its commit (`__BUILD__`, defined in `electron.vite.config.ts`).
 
+## Deploying it on a server
+
+[`deploy/DEPLOY.md`](./deploy/DEPLOY.md) puts the headless backend on an always-on Ubuntu 24.04 VPS (Hetzner),
+reached only over Tailscale, so the phone and the laptop work with the laptop off and the bots run Claude there.
+The kit is `deploy/`: `install.sh` (idempotent, `--update`/`--no-tailscale`/`--no-claude`), `workflows.service` (the
+systemd unit: `node out/main/backend.js --file /var/lib/workflows/store.sqlite --tailnet --phone-port 47392`),
+`backup.sh` with a daily timer, and `doctor.sh` (read-only checks). **When the backend's flags, ports or data layout
+change, update `deploy/` in the same commit** — the unit and DEPLOY.md must match the backend.
+
 ## Special rules
 
 [`docs/special-rules.md`](./docs/special-rules.md) lists every place the app treats an item type, a value, a link

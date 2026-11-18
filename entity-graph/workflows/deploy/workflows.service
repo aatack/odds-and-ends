@@ -1,0 +1,58 @@
+# YAWN workflows backend, headless (no Electron), with the phone served over Tailscale.
+# Installed by deploy/install.sh to /etc/systemd/system/workflows.service.
+# When the backend grows a new flag or changes a port, update this unit (and DEPLOY.md).
+
+[Unit]
+Description=YAWN workflows backend (headless; phone over Tailscale)
+# The store is local, so nothing on the network is needed to boot; but Tailscale
+# and the clock want the network up first.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=workflows
+Group=workflows
+WorkingDirectory=/opt/workflows/entity-graph/workflows
+
+# The headless backend: the store under /var/lib/workflows, the tailnet gate on
+# (install.sh runs `tailscale serve`, not this process), the phone listener on 47392.
+ExecStart=/usr/bin/node out/main/backend.js --file /var/lib/workflows/store.sqlite --tailnet --phone-port 47392
+
+# WORKFLOWS_PHONE_TOKEN (required), and any optional ANTHROPIC_API_KEY, GITHUB_TOKEN, …
+# A leading `-` means a missing file is not a startup error.
+EnvironmentFile=-/etc/workflows/env
+
+# The store's Rust binary, built by install.sh.
+Environment=EGDB_SERVER=/opt/workflows/egdb/target/release/egdb-server
+# A HOME the bots' tools (claude, git, npm, cargo) can write to; it is the state
+# dir, not under /home, so ProtectHome below does not hide it.
+Environment=HOME=/var/lib/workflows
+# /usr/local/bin first: that is where `npm install -g` put the claude CLI the bots
+# spawn; /usr/bin for node and git; the user's cargo for any build a bot runs.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/var/lib/workflows/.cargo/bin
+
+Restart=on-failure
+RestartSec=5
+# The backend stops cleanly on SIGTERM (hands items back, flushes the store), which
+# can take a few seconds; give it room before SIGKILL.
+TimeoutStopSec=30
+
+# --- Hardening. Chosen so bots can still run claude/git/node/npm in their folders
+#     under /var/lib/workflows. Reasoned, not tested. ---
+# No setuid/setgid gains: nothing here needs to become another user.
+NoNewPrivileges=true
+# A /tmp of its own: node/npm/claude scratch there without seeing other tenants'.
+PrivateTmp=true
+# /usr, /boot and /etc read-only; /var stays writable, so the store and the bots'
+# folders under /var/lib/workflows keep working. `strict` would make /var read-only
+# too and break the store, so this is `full`, not `strict`.
+ProtectSystem=full
+# /home and /root hidden. The service's HOME is /var/lib/workflows (a state dir,
+# not under /home), so bots keep their home while real users' homes stay private.
+ProtectHome=true
+# NOTE: MemoryDenyWriteExecute is deliberately NOT set — it would break node's V8
+# JIT and the QuickJS the engine runs. Keep the four above; do not tighten blindly.
+
+[Install]
+WantedBy=multi-user.target
